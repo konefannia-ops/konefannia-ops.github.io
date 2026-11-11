@@ -248,8 +248,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .ecran-centre { min-height: 70vh; display: grid; place-items: center; color: var(--muted); text-align: center; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
+/* ---------- Le quartier ---------- */
+.bandeau-demo.court { padding: 6px 12px; margin-bottom: 10px; font-size: 12px; }
+.monde {
+  position: relative; margin-top: 12px; border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+  height: 320px; background: #2a6f8e;
+}
+.monde canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+.monde-puce, .monde-aide { position: absolute; z-index: 1; pointer-events: none; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.monde-puce { top: 10px; left: 10px; background: rgb(22 16 12 / .82); color: var(--fg); padding: 5px 10px; }
+.monde-aide { left: 10px; right: 10px; bottom: 10px; background: rgb(247 239 229 / .94); color: var(--bg); padding: 8px 12px; text-align: center; }
+.interieur { width: 100%; height: auto; display: block; border-radius: 14px; border: 1px solid var(--line); }
+
 </style>
-<script src="config.js?v=58957cf7"></script>
+<script src="config.js?v=fbdd7aa1"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -680,6 +692,495 @@ function normaliserProfil(uid, d = {}, vuLeMs = 0) {
 }
 
 /* =====================================================================
+   PARTIE 1 bis — LE QUARTIER DESSINÉ
+   Une carte en tuiles (40 × 30) : routes, plage, lagune, bâtiments.
+   Le personnage marche au toucher (recherche de chemin), les autres
+   joueurs marchent aussi, et entrer dans un bâtiment ouvre ses actions.
+   ===================================================================== */
+
+const T = 32;            // taille d'une tuile, en pixels du monde
+const CW = 40, CH = 30;  // largeur et hauteur de la carte, en tuiles
+const ROUTES_H = [8, 9, 18, 19];
+const ROUTES_V = [19, 20];
+const PLAGE_Y = 24, EAU_Y = 26;
+
+/* Bâtiments où l'on entre. La porte est la tuile juste sous le bâtiment. */
+const BATIMENTS = [
+  { id: "maison",   nom: "Ta maison",            x: 2,  y: 2,  w: 5,  h: 5 },
+  { id: "garba",    nom: "Garbadrome",           x: 10, y: 3,  w: 4,  h: 4 },
+  { id: "bureau",   nom: "Agence pour l'emploi", x: 22, y: 2,  w: 6,  h: 5 },
+  { id: "ecole",    nom: "École",                x: 31, y: 1,  w: 7,  h: 6 },
+  { id: "maquis",   nom: "Maquis",               x: 2,  y: 12, w: 6,  h: 5 },
+  { id: "allo",     nom: "Allocodrome",          x: 11, y: 13, w: 5,  h: 4 },
+  { id: "terrain",  nom: "Terrain de foot",      x: 23, y: 12, w: 11, h: 6, zone: true },
+  { id: "gare",     nom: "Gare routière",        x: 3,  y: 21, w: 7,  h: 3 },
+  { id: "boutique", nom: "Boutique VIP",         x: 25, y: 21, w: 5,  h: 3 },
+];
+/* Maisons des voisins (décor) */
+const VOISINS = [
+  { x: 15, y: 3, w: 3, h: 3 }, { x: 35, y: 11, w: 4, h: 3 }, { x: 35, y: 14, w: 4, h: 3 },
+  { x: 12, y: 21, w: 4, h: 3 }, { x: 32, y: 21, w: 4, h: 3 },
+];
+const ARBRES = [
+  [1, 0], [8, 0], [17, 0], [29, 1], [39, 1], [0, 11], [9, 11], [17, 11], [21, 11],
+  [36, 17], [17, 15], [21, 16], [1, 24], [14, 24], [22, 25], [33, 24], [38, 24], [0, 20],
+];
+
+const CARTE = (() => {
+  const sol = [];
+  const bloque = new Uint8Array(CW * CH);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      const t = y >= EAU_Y ? "eau" : y >= PLAGE_Y ? "plage"
+        : ROUTES_H.includes(y) || ROUTES_V.includes(x) ? "route" : "sol";
+      sol.push(t);
+      if (t === "eau") bloque[y * CW + x] = 1;
+    }
+  }
+  const bloquer = (r) => { for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) bloque[y * CW + x] = 1; };
+  BATIMENTS.filter((b) => !b.zone).forEach(bloquer);
+  VOISINS.forEach(bloquer);
+  ARBRES.forEach(([x, y]) => { bloque[y * CW + x] = 1; });
+  const libre = (x, y) => x >= 0 && y >= 0 && x < CW && y < CH && !bloque[y * CW + x];
+  const tuilesLibres = [];
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) if (libre(x, y)) tuilesLibres.push([x, y]);
+  const porte = (b) => (b.zone ? { x: b.x + Math.floor(b.w / 2), y: b.y + Math.floor(b.h / 2) } : { x: b.x + Math.floor(b.w / 2), y: b.y + b.h });
+  return { sol, libre, tuilesLibres, porte, depart: porte(BATIMENTS[0]) };
+})();
+
+/** Plus court chemin entre deux tuiles (parcours en largeur). Renvoie la liste des tuiles à traverser. */
+function trouverChemin(dx, dy, ax, ay) {
+  if (!CARTE.libre(ax, ay)) return null;
+  if (dx === ax && dy === ay) return [];
+  const prec = new Int32Array(CW * CH).fill(-1);
+  const depart = dy * CW + dx, arrivee = ay * CW + ax;
+  prec[depart] = depart;
+  const file = [depart];
+  for (let i = 0; i < file.length; i++) {
+    const c = file[i];
+    if (c === arrivee) break;
+    const cx = c % CW, cy = (c / CW) | 0;
+    for (const [vx, vy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + vx, ny = cy + vy, n = ny * CW + nx;
+      if (CARTE.libre(nx, ny) && prec[n] === -1) { prec[n] = c; file.push(n); }
+    }
+  }
+  if (prec[arrivee] === -1) return null;
+  const chemin = [];
+  for (let c = arrivee; c !== depart; c = prec[c]) chemin.push({ x: c % CW, y: (c / CW) | 0 });
+  return chemin.reverse();
+}
+
+/* Couleurs du quartier selon son type */
+const AMBIANCES = {
+  populaire: { sol: "#b9905e", sol2: "#ad8452", route: "#8b5a3c", ligne: null, mur: "#dcc6a1", toit: "#8c98a2", toit2: "#76838e", voisinMur: "#cfb58c", voisinToit: "#9aa3aa" },
+  moyen:     { sol: "#9f9160", sol2: "#93855a", route: "#5f5b58", ligne: "#d8cfbf", mur: "#ebdfc6", toit: "#b4572f", toit2: "#984725", voisinMur: "#e1d3b6", voisinToit: "#a65a37" },
+  chic:      { sol: "#5d8a44", sol2: "#55803e", route: "#3d3c40", ligne: "#f2efe6", mur: "#f5f1e8", toit: "#a7432b", toit2: "#8c3622", voisinMur: "#ece6da", voisinToit: "#9c4a33" },
+};
+
+/* ---------------- Personnage dessiné ---------------- */
+function dessinerPerso(ctx, x, y, look, phase, enMarche, dir) {
+  const peau = PEAUX[look?.peau] || PEAUX[3];
+  const tenue = TENUES[look?.tenue] || TENUES[0];
+  const ch = "#1b120c";
+  const balance = enMarche ? Math.sin(phase) * 3.2 : 0;
+  const rebond = enMarche ? Math.abs(Math.sin(phase)) * 1.2 : 0;
+  ctx.save();
+  ctx.translate(x, y - rebond);
+  // ombre
+  ctx.fillStyle = "rgba(0,0,0,.28)";
+  ctx.beginPath(); ctx.ellipse(0, rebond + 1, 9, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  // jambes
+  ctx.strokeStyle = "#2a1d14"; ctx.lineWidth = 3.6; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-3, -11); ctx.lineTo(-3 + balance, -1); ctx.moveTo(3, -11); ctx.lineTo(3 - balance, -1); ctx.stroke();
+  // bras
+  ctx.strokeStyle = peau; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-7, -21); ctx.lineTo(-8 - balance * 0.6, -12); ctx.moveTo(7, -21); ctx.lineTo(8 + balance * 0.6, -12); ctx.stroke();
+  // corps
+  ctx.fillStyle = tenue;
+  ctx.beginPath(); ctx.roundRect(-7, -24, 14, 14, 4); ctx.fill();
+  // cheveux derrière la tête
+  ctx.fillStyle = ch;
+  if (look?.coiffure === "afro" || !look?.coiffure) { ctx.beginPath(); ctx.arc(0, -32, 10, 0, Math.PI * 2); ctx.fill(); }
+  if (look?.coiffure === "chignon") { ctx.beginPath(); ctx.arc(0, -41, 4.5, 0, Math.PI * 2); ctx.fill(); }
+  if (look?.coiffure === "tresses") { ctx.fillRect(-8, -34, 3, 14); ctx.fillRect(5, -34, 3, 14); }
+  // tête
+  ctx.fillStyle = peau;
+  ctx.beginPath(); ctx.arc(0, -31, 7.5, 0, Math.PI * 2); ctx.fill();
+  // cheveux devant
+  ctx.fillStyle = ch;
+  if (["ras", "tresses", "chignon"].includes(look?.coiffure)) { ctx.beginPath(); ctx.arc(0, -32, 7.6, Math.PI, Math.PI * 2); ctx.fill(); }
+  if (look?.coiffure === "foulard") {
+    ctx.fillStyle = tenue;
+    ctx.beginPath(); ctx.arc(0, -33, 8.6, Math.PI, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(5, -41, 4, 2.6, 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+  // yeux
+  ctx.fillStyle = "#140c07";
+  const o = dir * 1.6;
+  ctx.fillRect(-3 + o, -31, 1.8, 2); ctx.fillRect(2 + o, -31, 1.8, 2);
+  ctx.restore();
+}
+
+/* ---------------- Le monde ---------------- */
+const Monde = {
+  canvas: null,
+  ctx: null,
+  enCours: false,
+  quartier: null,
+  moi: null,
+  autres: new Map(),
+  camera: { x: 0, y: 0 },
+  zoom: 1,
+  vise: null,
+  desabonner: null,
+  dernierEnvoi: 0,
+  derniereFrame: 0,
+  aide: true,
+
+  attacher(place) {
+    if (!this.canvas) {
+      this.canvas = document.createElement("canvas");
+      this.canvas.setAttribute("aria-label", "Ton quartier. Touche le sol pour marcher, touche un bâtiment pour y entrer.");
+      this.canvas.setAttribute("role", "img");
+      this.ctx = this.canvas.getContext("2d");
+      this.canvas.addEventListener("pointerdown", (e) => this.toucher(e));
+      new ResizeObserver(() => this.redimensionner()).observe(this.canvas);
+    }
+    if (this.canvas.parentNode !== place) place.prepend(this.canvas);
+    this.ajusterHauteur(place);
+    this.verifierQuartier();
+    this.redimensionner();
+    if (!this.enCours) {
+      this.enCours = true;
+      this.derniereFrame = performance.now();
+      requestAnimationFrame((t) => this.boucle(t));
+    }
+  },
+
+  /** La carte remplit l'espace libre entre l'en-tête et la barre du bas. */
+  ajusterHauteur(place = this.canvas?.parentNode) {
+    if (!place || !place.isConnected) return;
+    const nav = document.querySelector(".bas-fixe");
+    const bas = nav ? nav.getBoundingClientRect().height : 0;
+    const haut = place.getBoundingClientRect().top + window.scrollY;
+    const h = Math.max(280, Math.min(720, window.innerHeight - haut - bas - 12));
+    place.style.height = h + "px";
+  },
+
+  /** Au démarrage ou après un déménagement : on réapparaît devant sa maison. */
+  verifierQuartier() {
+    const q = S.etat?.quartier;
+    if (!q || q === this.quartier) return;
+    this.quartier = q;
+    const d = CARTE.depart;
+    this.moi = { x: (d.x + 0.5) * T, y: (d.y + 0.5) * T, chemin: [], phase: 0, dir: 0 };
+    this.camera = { x: this.moi.x, y: this.moi.y };
+    this.autres.clear();
+    if (this.desabonner) this.desabonner();
+    this.desabonner = S.serveur.suivrePositions(q, (liste) => this.surPositions(liste || []));
+    this.envoyer(d.x, d.y, true);
+  },
+
+  arreter() {
+    if (this.desabonner) this.desabonner();
+    this.desabonner = null;
+    this.quartier = null;
+    this.autres.clear();
+  },
+
+  envoyer(x, y, force = false) {
+    const now = Date.now();
+    if (!force && now - this.dernierEnvoi < 350) return;
+    this.dernierEnvoi = now;
+    S.serveur.bouger(S.uid, this.quartier, x, y).catch(() => {});
+  },
+
+  surPositions(liste) {
+    const vus = new Set();
+    for (const p of liste) {
+      if (p.uid === S.uid) continue;
+      vus.add(p.uid);
+      let e = this.autres.get(p.uid);
+      if (!e) {
+        e = { x: (p.x + 0.5) * T, y: (p.y + 0.5) * T, chemin: [], phase: Math.random() * 6, dir: 0, cible: [p.x, p.y] };
+        this.autres.set(p.uid, e);
+      } else if (e.cible[0] !== p.x || e.cible[1] !== p.y) {
+        e.cible = [p.x, p.y];
+        e.chemin = trouverChemin(Math.floor(e.x / T), Math.floor(e.y / T), p.x, p.y) || [];
+      }
+    }
+    for (const uid of [...this.autres.keys()]) if (!vus.has(uid)) this.autres.delete(uid);
+  },
+
+  redimensionner() {
+    const c = this.canvas;
+    if (!c || !c.isConnected) return;
+    const r = c.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const lw = Math.round(r.width * dpr), lh = Math.round(r.height * dpr);
+    if (c.width !== lw) c.width = lw;
+    if (c.height !== lh) c.height = lh;
+    this.dpr = dpr;
+    this.largeur = r.width;
+    this.hauteur = r.height;
+    this.zoom = Math.max(1, Math.min(1.5, r.width / (14 * T)));
+  },
+
+  versMonde(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) / this.zoom + this.camera.x - this.largeur / this.zoom / 2,
+      y: (e.clientY - r.top) / this.zoom + this.camera.y - this.hauteur / this.zoom / 2,
+    };
+  },
+
+  toucher(e) {
+    if (!this.moi) return;
+    if (this.aide) { this.aide = false; planifierRendu(); }
+    const w = this.versMonde(e);
+    // 1. Un autre joueur : on ouvre son profil
+    for (const [uid, a] of this.autres) {
+      if (Math.hypot(w.x - a.x, w.y - (a.y - 18)) < 20) {
+        S.profilOuvert = uid; S.confirmerRupture = false; rendre();
+        return;
+      }
+    }
+    const tx = Math.floor(w.x / T), ty = Math.floor(w.y / T);
+    // 2. Un bâtiment : on marche jusqu'à sa porte puis on entre
+    const b = BATIMENTS.find((x) => tx >= x.x && tx < x.x + x.w && ty >= x.y && ty < x.y + x.h);
+    if (VOISINS.some((v) => tx >= v.x && tx < v.x + v.w && ty >= v.y && ty < v.y + v.h)) {
+      toast("C'est chez un voisin. Pas de visite sans invitation 😄");
+      return;
+    }
+    let cx = tx, cy = ty;
+    if (b) { const p = b.zone && CARTE.libre(tx, ty) ? { x: tx, y: ty } : CARTE.porte(b); cx = p.x; cy = p.y; }
+    const depart = { x: Math.floor(this.moi.x / T), y: Math.floor(this.moi.y / T) };
+    const chemin = trouverChemin(depart.x, depart.y, cx, cy);
+    if (!chemin) { if (!b) toast("Impossible d'aller par là."); return; }
+    this.vise = b ? b.id : null;
+    this.moi.chemin = chemin;
+    this.cibleTap = { x: (cx + 0.5) * T, y: (cy + 0.5) * T, t: performance.now() };
+    if (!chemin.length && b) this.entrer(b.id);
+    this.envoyer(cx, cy);
+  },
+
+  /** Déplacement au clavier (ordinateur) : une case à la fois. */
+  pas(dx, dy) {
+    if (!this.moi || this.moi.chemin.length > 1) return;
+    const x = Math.floor(this.moi.x / T) + dx, y = Math.floor(this.moi.y / T) + dy;
+    if (!CARTE.libre(x, y)) return;
+    if (this.aide) { this.aide = false; planifierRendu(); }
+    this.vise = null;
+    this.moi.chemin = [{ x, y }];
+    this.envoyer(x, y);
+  },
+
+  entrerIci() {
+    if (!this.moi) return;
+    const x = Math.floor(this.moi.x / T), y = Math.floor(this.moi.y / T);
+    const b = BATIMENTS.find((b) => { const p = CARTE.porte(b); return b.zone ? x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h : p.x === x && p.y === y; });
+    if (b) this.entrer(b.id);
+  },
+
+  entrer(id) {
+    this.vise = null;
+    S.batiment = id;
+    rendre();
+  },
+
+  avancer(e, dt, vitesse) {
+    if (!e.chemin.length) return false;
+    const c = e.chemin[0];
+    const cx = (c.x + 0.5) * T, cy = (c.y + 0.5) * T;
+    const dx = cx - e.x, dy = cy - e.y;
+    const d = Math.hypot(dx, dy);
+    const pas = vitesse * dt;
+    if (dx) e.dir = Math.sign(dx);
+    if (d <= pas) { e.x = cx; e.y = cy; e.chemin.shift(); }
+    else { e.x += (dx / d) * pas; e.y += (dy / d) * pas; }
+    e.phase += dt * 12;
+    return true;
+  },
+
+  boucle(t) {
+    if (!this.canvas || !this.canvas.isConnected) { this.enCours = false; return; }
+    const dt = Math.min(0.05, (t - this.derniereFrame) / 1000);
+    this.derniereFrame = t;
+    const marchait = this.moi.chemin.length > 0;
+    this.avancer(this.moi, dt, 3.4 * T);
+    if (marchait && !this.moi.chemin.length && this.vise) this.entrer(this.vise);
+    for (const a of this.autres.values()) this.avancer(a, dt, 3.2 * T);
+    // la caméra suit le personnage en douceur
+    const k = 1 - Math.pow(0.0015, dt);
+    this.camera.x += (this.moi.x - this.camera.x) * k;
+    this.camera.y += (this.moi.y - this.camera.y) * k;
+    const demiL = this.largeur / this.zoom / 2, demiH = this.hauteur / this.zoom / 2;
+    this.camera.x = Math.max(demiL, Math.min(CW * T - demiL, this.camera.x));
+    this.camera.y = Math.max(demiH, Math.min(CH * T - demiH, this.camera.y));
+    this.dessiner(t / 1000);
+    requestAnimationFrame((tt) => this.boucle(tt));
+  },
+
+  dessiner(temps) {
+    const ctx = this.ctx, z = this.zoom * this.dpr;
+    const amb = AMBIANCES[quartierDe(this.quartier).type];
+    const L = this.largeur / this.zoom, H = this.hauteur / this.zoom;
+    const ox = this.camera.x - L / 2, oy = this.camera.y - H / 2;
+    ctx.setTransform(z, 0, 0, z, -ox * z, -oy * z);
+    ctx.imageSmoothingEnabled = true;
+
+    // Sol, routes, plage, lagune
+    const x0 = Math.max(0, Math.floor(ox / T)), x1 = Math.min(CW - 1, Math.ceil((ox + L) / T));
+    const y0 = Math.max(0, Math.floor(oy / T)), y1 = Math.min(CH - 1, Math.ceil((oy + H) / T));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const s = CARTE.sol[y * CW + x];
+        ctx.fillStyle = s === "eau" ? "#2a6f8e" : s === "plage" ? "#e3c58e" : s === "route" ? amb.route : (x + y) % 2 ? amb.sol : amb.sol2;
+        ctx.fillRect(x * T, y * T, T + 0.5, T + 0.5);
+        if (s === "eau") {
+          ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 1.5;
+          const v = Math.sin(temps * 1.6 + x * 0.9 + y) * 3;
+          ctx.beginPath(); ctx.moveTo(x * T + 6, y * T + 14 + v); ctx.quadraticCurveTo(x * T + 16, y * T + 10 + v, x * T + 26, y * T + 14 + v); ctx.stroke();
+        }
+      }
+    }
+    if (amb.ligne) {
+      ctx.strokeStyle = amb.ligne; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      for (const y of [9, 19]) { ctx.moveTo(0, y * T); ctx.lineTo(CW * T, y * T); }
+      ctx.moveTo(20 * T, 0); ctx.lineTo(20 * T, PLAGE_Y * T);
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    // pirogue sur la lagune
+    ctx.fillStyle = "#6b3f22";
+    ctx.beginPath(); ctx.ellipse(30 * T, 27.6 * T + Math.sin(temps) * 2, 34, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Arbres et palmiers
+    for (const [x, y] of ARBRES) {
+      const cx = (x + 0.5) * T, cy = (y + 0.5) * T;
+      ctx.fillStyle = "rgba(0,0,0,.2)"; ctx.beginPath(); ctx.ellipse(cx, cy + 10, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#6b4a2b"; ctx.fillRect(cx - 2.5, cy - 6, 5, 16);
+      ctx.fillStyle = y >= PLAGE_Y ? "#3f8d4a" : "#2f7a3d";
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.sin(temps + x) * 0.06;
+        ctx.beginPath(); ctx.ellipse(cx + Math.cos(a) * 8, cy - 10 + Math.sin(a) * 5, 9, 4, a, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Maisons des voisins puis bâtiments
+    for (const v of VOISINS) this.dessinerBatiment(ctx, v, amb, true);
+    for (const b of BATIMENTS) this.dessinerBatiment(ctx, b, amb, false);
+
+    // repère de destination
+    if (this.cibleTap && this.moi.chemin.length) {
+      const age = (performance.now() - this.cibleTap.t) / 1000;
+      ctx.strokeStyle = `rgba(242,138,34,${Math.max(0, 0.9 - age * 0.4)})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(this.cibleTap.x, this.cibleTap.y + 6, 10 + (age % 1) * 4, 4 + (age % 1) * 1.5, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // Personnages, du plus haut au plus bas pour qu'ils se superposent bien
+    const profils = new Map((S.enLigne || []).map((p) => [p.uid, p]));
+    const persos = [{ e: this.moi, look: S.etat.look, nom: "Toi", moi: true }];
+    for (const [uid, e] of this.autres) {
+      const p = profils.get(uid) || S.profils.get(uid);
+      if (p) persos.push({ e, look: p.look, nom: p.nom.split(" ")[0], ami: !!relationAvec(uid) });
+    }
+    persos.sort((a, b) => a.e.y - b.e.y);
+    for (const p of persos) dessinerPerso(ctx, p.e.x, p.e.y + 8, p.look, p.e.phase, p.e.chemin.length > 0, p.e.dir);
+    ctx.font = "700 10px Figtree, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineJoin = "round";
+    for (const p of persos) {
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(22,16,12,.85)";
+      ctx.strokeText(p.nom, p.e.x, p.e.y - 38);
+      ctx.fillStyle = p.moi ? "#f28a22" : p.ami ? "#7fe0b0" : "#f7efe5";
+      ctx.fillText(p.nom, p.e.x, p.e.y - 38);
+    }
+  },
+
+  dessinerBatiment(ctx, b, amb, voisin) {
+    const x = b.x * T, y = b.y * T, w = b.w * T, h = b.h * T;
+    if (b.zone) {
+      // terrain de foot
+      ctx.fillStyle = "#3f8f45"; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = "#47994d";
+      for (let i = 0; i < b.w; i += 2) ctx.fillRect(x + i * T, y, T, h);
+      ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+      ctx.beginPath(); ctx.moveTo(x + w / 2, y + 4); ctx.lineTo(x + w / 2, y + h - 4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeRect(x + 4, y + h / 2 - 22, 22, 44); ctx.strokeRect(x + w - 26, y + h / 2 - 22, 22, 44);
+      this.enseigne(ctx, b, x + w / 2, y - 4);
+      return;
+    }
+    const toitH = h * 0.55;
+    const special = { maquis: "#e2553f", garba: "#f4c430", allo: "#1aa36b", boutique: "#7d4bb3", ecole: "#3b6fd8", bureau: "#4b5563", gare: "#c2410c" }[b.id];
+    // ombre
+    ctx.fillStyle = "rgba(0,0,0,.22)"; ctx.fillRect(x + 6, y + 8, w, h);
+    // mur
+    ctx.fillStyle = voisin ? amb.voisinMur : amb.mur;
+    ctx.fillRect(x, y + toitH, w, h - toitH);
+    // toit
+    ctx.fillStyle = voisin ? amb.voisinToit : b.id === "maison" ? amb.toit : special || amb.toit;
+    ctx.fillRect(x - 3, y, w + 6, toitH);
+    ctx.fillStyle = "rgba(0,0,0,.14)";
+    ctx.fillRect(x - 3, y + toitH / 2, w + 6, toitH / 2);
+    if (quartierDe(this.quartier).type === "populaire" && !special) {
+      ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 1;
+      for (let i = x + 6; i < x + w; i += 8) { ctx.beginPath(); ctx.moveTo(i, y + 2); ctx.lineTo(i, y + toitH - 2); ctx.stroke(); }
+    }
+    // fenêtres
+    ctx.fillStyle = "#3a4a57";
+    const fy = y + toitH + (h - toitH) * 0.25;
+    for (let i = 1; i < b.w; i += 2) if (i !== Math.floor(b.w / 2)) ctx.fillRect(x + i * T - 2, fy, 14, 10);
+    // porte
+    const porteX = Math.floor(b.w / 2) * T;
+    ctx.fillStyle = voisin ? "#5b3a24" : "#3b2416";
+    ctx.fillRect(x + porteX + 6, y + h - 22, T - 12, 22);
+    if (!voisin) this.enseigne(ctx, b, x + w / 2, y - 6);
+  },
+
+  enseigne(ctx, b, cx, cy) {
+    ctx.font = "700 11px Figtree, system-ui, sans-serif";
+    const texte = b.nom;
+    const lw = ctx.measureText(texte).width + 14;
+    ctx.fillStyle = b.id === "maison" ? "#f28a22" : "rgba(22,16,12,.88)";
+    ctx.beginPath(); ctx.roundRect(cx - lw / 2, cy - 17, lw, 18, 6); ctx.fill();
+    ctx.fillStyle = b.id === "maison" ? "#1d1209" : "#f7efe5";
+    ctx.textAlign = "center";
+    ctx.fillText(texte, cx, cy - 4);
+  },
+};
+
+/* ---------------- Intérieur de la maison ---------------- */
+function interieurMaison(j) {
+  const a = (id) => j.maison.includes(id);
+  const type = quartierDe(j.quartier).type;
+  const mur = { populaire: "#d9c19a", moyen: "#e8dcc2", chic: "#f2ece0" }[type];
+  const sol = { populaire: "#9b7a54", moyen: "#a7774e", chic: "#c9b79c" }[type];
+  return `<svg class="interieur" viewBox="0 0 320 180" role="img" aria-label="L'intérieur de ta maison">
+    <rect width="320" height="112" fill="${mur}"/>
+    <rect y="112" width="320" height="68" fill="${sol}"/>
+    <rect y="108" width="320" height="6" fill="rgba(0,0,0,.12)"/>
+    <rect x="128" y="22" width="56" height="42" rx="3" fill="#7cc3e6" stroke="#6b4a2b" stroke-width="4"/>
+    <line x1="156" y1="22" x2="156" y2="64" stroke="#6b4a2b" stroke-width="3"/>
+    ${a("clim") ? `<rect x="22" y="16" width="70" height="20" rx="5" fill="#f7f7f5" stroke="#c9c4ba"/><line x1="30" y1="30" x2="84" y2="30" stroke="#c9c4ba" stroke-width="2"/>` : ""}
+    ${a("matelas")
+      ? `<rect x="14" y="118" width="96" height="40" rx="6" fill="#3b6fd8"/><rect x="18" y="112" width="30" height="14" rx="5" fill="#f7efe5"/><rect x="14" y="150" width="96" height="10" rx="3" fill="#6b3f22"/>`
+      : `<rect x="14" y="140" width="90" height="18" rx="3" fill="#c8a36b"/><line x1="14" y1="147" x2="104" y2="147" stroke="#a5824c" stroke-width="2"/>`}
+    ${a("ventilo") ? `<line x1="122" y1="160" x2="122" y2="112" stroke="#555" stroke-width="3"/><circle cx="122" cy="104" r="13" fill="#e5e7eb" stroke="#555" stroke-width="2"/><rect x="112" y="158" width="20" height="5" rx="2" fill="#555"/>` : ""}
+    ${a("tele") ? `<rect x="168" y="70" width="64" height="40" rx="3" fill="#1b1b1f" stroke="#444" stroke-width="2"/><rect x="172" y="74" width="56" height="32" fill="#2f5d7a"/><rect x="190" y="110" width="20" height="6" fill="#444"/>` : ""}
+    ${a("canape") ? `<rect x="150" y="128" width="102" height="30" rx="8" fill="#f28a22"/><rect x="150" y="118" width="102" height="16" rx="6" fill="#d9771a"/><path d="M160 136 h80" stroke="#1aa36b" stroke-width="4"/>` : ""}
+    ${a("frigo") ? `<rect x="276" y="56" width="34" height="104" rx="4" fill="#eef0f2" stroke="#c4c8cc" stroke-width="2"/><line x1="276" y1="92" x2="310" y2="92" stroke="#c4c8cc" stroke-width="2"/><rect x="302" y="70" width="3" height="14" fill="#9aa0a6"/>` : ""}
+    <rect x="${a("frigo") ? 240 : 270}" y="58" width="34" height="54" fill="#6b4a2b"/>
+  </svg>`;
+}
+
+window.addEventListener("resize", () => Monde.ajusterHauteur());
+
+/* =====================================================================
    PARTIE 2 — LE SERVEUR
    Deux versions avec exactement les mêmes fonctions :
    - Firebase : le vrai multijoueur (quand config.js est rempli)
@@ -701,6 +1202,9 @@ function creerServeurDemo() {
   let surAuth = () => {};
   let courant = null;
   const bots = new Set();
+  const positions = new Map();      // uid -> { uid, quartier, x, y }
+  const ecouteursPositions = new Set();
+  const emettrePositions = () => { for (const f of [...ecouteursPositions]) f(); };
 
   const emettre = () => { for (const f of [...ecouteurs]) f(); };
   const suivre = (calcul, cb) => {
@@ -736,6 +1240,21 @@ function creerServeurDemo() {
       look: { peau: (i * 2) % 6, coiffure: COIFFURES[i % 5].id, tenue: (i * 2 + 1) % 6 },
     });
   }
+
+  // Les joueurs simulés se promènent dans le quartier où tu te trouves.
+  const placeBot = () => { const [x, y] = auHasard(CARTE.tuilesLibres); return { x, y }; };
+  for (const uid of bots) positions.set(uid, { uid, ...placeBot() });
+  setInterval(() => {
+    let change = false;
+    for (const uid of bots) {
+      if (Math.random() > 0.3) continue;
+      const p = positions.get(uid);
+      const proches = CARTE.tuilesLibres.filter(([x, y]) => Math.abs(x - p.x) + Math.abs(y - p.y) <= 8);
+      const [x, y] = auHasard(proches);
+      p.x = x; p.y = y; change = true;
+    }
+    if (change) emettrePositions();
+  }, 1500);
 
   function reagirBot(id) {
     const r = relations.get(id);
@@ -871,6 +1390,19 @@ function creerServeurDemo() {
     async marquerLu(moi, autre) {
       const c = conversations.get(idPaire(moi, autre));
       if (c && c.nonLus[moi]) { c.nonLus[moi] = 0; emettre(); }
+    },
+
+    async bouger(uid, quartier, x, y) {
+      positions.set(uid, { uid, quartier, x, y });
+      emettrePositions();
+    },
+    suivrePositions(quartier, cb) {
+      const f = () => cb([...positions.values()]
+        .filter((p) => (bots.has(p.uid) ? profils.get(p.uid).enLigne : p.quartier === quartier))
+        .map(copie));
+      ecouteursPositions.add(f);
+      setTimeout(f, 0);
+      return () => ecouteursPositions.delete(f);
     },
   };
 }
@@ -1021,6 +1553,15 @@ async function creerServeurFirebase(config) {
       b.set(F.doc(F.collection(db, "conversations", id, "messages")), { auteur: moi, texte, envoyeLe: maintenant() });
       await b.commit();
     },
+    bouger: (uid, quartier, x, y) => F.setDoc(ref("positions", uid), { quartier, x, y, maj: maintenant() }),
+    suivrePositions(quartier, cb) {
+      const q = F.query(col("positions"), F.where("quartier", "==", quartier), F.limit(80));
+      return F.onSnapshot(q, (s) => {
+        const limite = Date.now() - 10 * 60 * 1000;
+        cb(s.docs.map((d) => { const x = lire(d); return { uid: d.id, x: x.x, y: x.y, maj: ms(x.maj) }; })
+          .filter((p) => p.maj > limite));
+      }, enSecours(cb));
+    },
     async marquerLu(moi, autre) {
       try {
         await F.updateDoc(ref("conversations", idPaire(moi, autre)), { [`nonLus.${moi}`]: 0 });
@@ -1051,7 +1592,8 @@ const S = {
   brouillon: { nom: "", genre: "femme", look: { peau: 3, coiffure: "afro", tenue: 0 } },
   erreurCreation: "",
   envoi: false,
-  onglet: "vie",
+  onglet: "quartier",
+  batiment: null,
   sousOnglet: "enligne",
   relations: [],
   relationsChargees: false,
@@ -1159,8 +1701,9 @@ function arreterJeu() {
   abonnementsProfils.forEach((f) => f && f());
   abonnementsProfils.clear();
   fermerChat();
+  Monde.arreter();
   clearInterval(minuteriePresence);
-  Object.assign(S, { relations: [], enLigne: null, classement: null, conversations: [], profils: new Map(), profilOuvert: null, bilan: null, resultats: null, recherche: "" });
+  Object.assign(S, { relations: [], enLigne: null, classement: null, conversations: [], profils: new Map(), profilOuvert: null, batiment: null, bilan: null, resultats: null, recherche: "", onglet: "quartier" });
   partenaireEcrit = "?";
 }
 
@@ -1464,8 +2007,9 @@ const tuile = ({ attrs, titre, detail, cout, actif = true }) =>
 const marque = () => `<h1 class="titre">La Vie <span class="babi">à Babi</span></h1>
   <div class="drapeau" aria-hidden="true"><span></span><span></span><span></span></div>`;
 
-const bandeauDemo = () => S.serveur?.demo
-  ? `<div class="bandeau-demo"><strong>Mode démo.</strong> Les autres joueurs sont simulés et rien n'est enregistré. Le vrai multijoueur s'active quand Firebase est configuré.</div>` : "";
+const bandeauDemo = (court = false) => !S.serveur?.demo ? ""
+  : court ? `<div class="bandeau-demo court"><strong>Mode démo</strong> · joueurs simulés, rien n'est enregistré</div>`
+  : `<div class="bandeau-demo"><strong>Mode démo.</strong> Les autres joueurs sont simulés et rien n'est enregistré. Le vrai multijoueur s'active quand Firebase est configuré.</div>`;
 
 /* ---------- Écrans ---------- */
 function vueAuth() {
@@ -1543,9 +2087,9 @@ function vueJeu() {
   const j = S.etat;
   const q = quartierDe(j.quartier);
   const badgeJoueurs = demandesEnAttente() + nonLus();
-  const onglets = [["vie", "Vie"], ["boulot", "Boulot"], ["joueurs", "Joueurs"], ["maison", "Maison"], ["perf", "Perf"]];
-  const corps = { vie: ongletVie, boulot: ongletBoulot, joueurs: ongletJoueurs, maison: ongletMaison, perf: ongletPerf }[S.onglet]();
-  return `${bandeauDemo()}
+  const onglets = [["quartier", "Quartier"], ["boulot", "Boulot"], ["joueurs", "Joueurs"], ["maison", "Maison"], ["perf", "Perf"]];
+  const corps = { quartier: ongletQuartier, boulot: ongletBoulot, joueurs: ongletJoueurs, maison: ongletMaison, perf: ongletPerf }[S.onglet]();
+  return `${bandeauDemo(true)}
   <header class="entete">
     ${avatar(j.look, 60)}
     <div style="min-width:0">
@@ -1568,43 +2112,64 @@ function vueJeu() {
 }
 
 /* ---------- Onglets ---------- */
-function ongletVie() {
+function tuileActivite(id) {
   const j = S.etat;
-  return `<h2 class="section-titre">Que fais-tu ce mois-ci ?</h2>
-  <div class="liste">${ACTIVITES.map((a) => tuile({
+  const a = ACTIVITES.find((x) => x.id === id);
+  return tuile({
     attrs: `data-action="activite" data-valeur="${a.id}"`, titre: a.nom,
     detail: `${a.detail} · −${a.energie} énergie`, cout: a.prix ? fcfa(a.prix) : "Gratuit",
     actif: j.energie >= a.energie && j.argent >= a.prix,
-  })).join("")}</div>`;
+  });
 }
 
-function ongletBoulot() {
+function ongletQuartier() {
+  const q = quartierDe(S.etat.quartier);
+  const visibles = Monde.autres.size;
+  return `<div class="monde" id="monde-place">
+    <div class="monde-puce">${q.nom}${visibles ? ` · ${visibles} joueur${visibles > 1 ? "s" : ""} autour` : ""}</div>
+    ${Monde.aide ? `<div class="monde-aide">Touche le sol pour marcher. Touche un bâtiment pour entrer. Touche un joueur pour voir son profil.</div>` : ""}
+  </div>`;
+}
+
+function blocPoste() {
   const j = S.etat;
   const m = metierDe(j.metier);
-  const poste = m ? `<div class="carte">
+  if (!m) return `<div class="vide">Tu n'as pas encore de travail. Postule à une offre ci-dessous.</div>`;
+  return `<div class="carte">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>${m.nom}</strong><span class="etiquette vert">${fcfa(m.salaire)} / mois</span></div>
       <p class="note" style="margin:6px 0 12px">Deux journées par mois, payées chacune la moitié du salaire. Faites ce mois : ${j.travailCeMois} / 2</p>
       <div class="liste">
         ${tuile({ attrs: 'data-action="travailler"', titre: "Aller au travail", detail: `−${m.energie} énergie`, cout: "+" + fcfa(m.salaire / 2), actif: j.travailCeMois < 2 && j.energie >= m.energie })}
         <button class="btn secondaire" data-action="demissionner">Démissionner</button>
-      </div></div>` : `<div class="vide">Tu n'as pas encore de travail. Postule à une offre ci-dessous.</div>`;
+      </div></div>`;
+}
+
+function blocEtudes() {
+  const j = S.etat;
   const suivant = j.diplome + 1;
-  const etudes = j.etude ? `<div class="carte">
+  if (j.etude) return `<div class="carte">
       <strong>Formation : ${DIPLOMES[j.etude.niveau].nom}</strong>
       <div class="barre" style="margin:10px 0"><i class="orange" style="width:${j.etude.progres}%"></i></div>
       <p class="note" style="margin:0 0 12px">Progression : ${j.etude.progres} %</p>
-      ${tuile({ attrs: 'data-action="etudier"', titre: "Réviser", detail: "−35 énergie", cout: "Gratuit", actif: j.energie >= 35 })}</div>`
-    : suivant < DIPLOMES.length
-      ? tuile({ attrs: 'data-action="inscrire"', titre: `Préparer le ${DIPLOMES[suivant].nom}`, detail: "Frais d'inscription payés une fois", cout: fcfa(DIPLOMES[suivant].frais), actif: j.argent >= DIPLOMES[suivant].frais })
-      : `<div class="vide">Tu as le plus haut diplôme. Bravo !</div>`;
-  const offres = METIERS.filter((x) => x.id !== j.metier).map((x) => {
+      ${tuile({ attrs: 'data-action="etudier"', titre: "Réviser", detail: "−35 énergie", cout: "Gratuit", actif: j.energie >= 35 })}</div>`;
+  if (suivant < DIPLOMES.length) return tuile({ attrs: 'data-action="inscrire"', titre: `Préparer le ${DIPLOMES[suivant].nom}`, detail: "Frais d'inscription payés une fois", cout: fcfa(DIPLOMES[suivant].frais), actif: j.argent >= DIPLOMES[suivant].frais });
+  return `<div class="vide">Tu as le plus haut diplôme. Bravo !</div>`;
+}
+
+function blocOffres() {
+  const j = S.etat;
+  return `<div class="liste">${METIERS.filter((x) => x.id !== j.metier).map((x) => {
     const okD = j.diplome >= x.diplome, okR = j.rep >= x.rep;
     const manque = [!okD ? DIPLOMES[x.diplome].nom : "", !okR ? `réputation ${x.rep}` : ""].filter(Boolean).join(" et ");
     return tuile({ attrs: `data-action="postuler" data-valeur="${x.id}"`, titre: x.nom, detail: okD && okR ? "Tu remplis les conditions · −10 énergie" : `Il faut : ${manque}`, cout: fcfa(x.salaire), actif: okD && okR && j.energie >= 10 });
-  }).join("");
-  return `<h2 class="section-titre">Ton poste</h2>${poste}
-  <h2 class="section-titre">Études · ${DIPLOMES[j.diplome].nom}</h2>${etudes}
-  <h2 class="section-titre">Offres d'emploi</h2><div class="liste">${offres}</div>`;
+  }).join("")}</div>`;
+}
+
+function ongletBoulot() {
+  const j = S.etat;
+  return `<h2 class="section-titre">Ton poste</h2>${blocPoste()}
+  <h2 class="section-titre">Études · ${DIPLOMES[j.diplome].nom}</h2>${blocEtudes()}
+  <h2 class="section-titre">Offres d'emploi</h2>${blocOffres()}`;
 }
 
 function ligneJoueur(p, { sous, fin = "", action = "profil", classe = "" } = {}) {
@@ -1667,25 +2232,64 @@ function listeClassement() {
   </div>`).join("")}</div>`;
 }
 
-function ongletMaison() {
+function blocMeubles() {
   const j = S.etat;
-  const q = quartierDe(j.quartier);
-  return `<h2 class="section-titre">Chez toi à ${q.nom}</h2>
-  <p class="note" style="margin:-4px 0 10px">Avec 3 objets ou plus, ton bonheur baisse moins chaque mois.</p>
-  <div class="liste">${MEUBLES.map((m) => {
+  return `<div class="liste">${MEUBLES.map((m) => {
     const a = j.maison.includes(m.id);
     return tuile({ attrs: `data-action="acheter" data-valeur="${m.id}"`, titre: m.nom, detail: a ? "Déjà chez toi" : `+${m.bonheur} bonheur`, cout: a ? "✓" : fcfa(m.prix), actif: !a && j.argent >= m.prix });
-  }).join("")}</div>
-  <h2 class="section-titre">Boutique</h2>
-  <div class="carte boutique">
+  }).join("")}</div>`;
+}
+
+const blocBoutique = () => `<div class="carte boutique">
     <div><strong>Tenues exclusives et statut VIP</strong><p class="note" style="margin:2px 0 0">Bientôt disponible.</p></div>
     <span class="etiquette orange">Bientôt</span>
-  </div>
-  <h2 class="section-titre">Déménager</h2>
-  <div class="liste">${QUARTIERS.filter((x) => x.id !== j.quartier).map((x) => tuile({
+  </div>`;
+
+function blocDemenager() {
+  const j = S.etat;
+  return `<div class="liste">${QUARTIERS.filter((x) => x.id !== j.quartier).map((x) => tuile({
     attrs: `data-action="demenager" data-valeur="${x.id}"`, titre: x.nom, detail: `${TYPE_QUARTIER[x.type].label} · loyer ${fcfa(x.loyer)}`,
     cout: "Caution " + fcfa(x.loyer * 3), actif: j.argent >= x.loyer * 3,
   })).join("")}</div>`;
+}
+
+function ongletMaison() {
+  const j = S.etat;
+  return `<h2 class="section-titre">Chez toi à ${quartierDe(j.quartier).nom}</h2>
+  ${interieurMaison(j)}
+  <p class="note" style="margin:8px 0 10px">Avec 3 objets ou plus, ton bonheur baisse moins chaque mois.</p>
+  ${blocMeubles()}
+  <h2 class="section-titre">Boutique</h2>${blocBoutique()}
+  <h2 class="section-titre">Déménager</h2>${blocDemenager()}`;
+}
+
+/* Ce qu'on peut faire en entrant dans chaque bâtiment du quartier */
+function vueBatiment() {
+  const b = BATIMENTS.find((x) => x.id === S.batiment);
+  if (!b) return "";
+  const j = S.etat;
+  const contenu = {
+    maison: () => `${interieurMaison(j)}<div class="liste" style="margin-top:12px">${tuileActivite("repos")}</div>
+      <h3 class="section-titre" style="font-size:15px">Équiper ta maison</h3>${blocMeubles()}`,
+    garba: () => `<p class="note" style="margin-top:0">Le garba du quartier, pas cher et bien pimenté.</p><div class="liste">${tuileActivite("garba")}</div>`,
+    maquis: () => `<p class="note" style="margin-top:0">Pour inviter un ami au maquis, ouvre son profil : vous gagnez en affinité tous les deux.</p><div class="liste">${tuileActivite("maquis")}</div>`,
+    allo: () => `<div class="liste">${tuileActivite("allo")}</div>`,
+    terrain: () => `<div class="liste">${tuileActivite("sport")}</div>`,
+    ecole: () => `<p class="note" style="margin-top:0">Ton diplôme : ${DIPLOMES[j.diplome].nom}. Plus il est élevé, plus les offres d'emploi paient.</p>${blocEtudes()}`,
+    bureau: () => `${blocPoste()}<h3 class="section-titre" style="font-size:15px">Offres d'emploi</h3>${blocOffres()}`,
+    gare: () => `<div class="liste">${tuileActivite("bassam")}</div><h3 class="section-titre" style="font-size:15px">Déménager dans un autre quartier</h3>${blocDemenager()}`,
+    boutique: () => blocBoutique(),
+  }[b.id]();
+  return `<div class="voile" data-action="fermer-batiment">
+    <div class="feuille" role="dialog" aria-modal="true" aria-labelledby="bat-titre" data-stop>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <h3 id="bat-titre" style="margin:0">${b.nom}</h3>
+        <button class="icone-btn" data-action="fermer-batiment" aria-label="Sortir du bâtiment">Sortir</button>
+      </div>
+      <div class="meta" style="margin-bottom:10px">Énergie ${j.energie} · ${fcfa(j.argent)}</div>
+      ${contenu}
+    </div>
+  </div>`;
 }
 
 /* Courbe de l'argent : mêmes dimensions pour le dessin et le survol. */
@@ -1895,7 +2499,9 @@ function rendre() {
     jeu: vueJeu,
   }[S.ecran]();
 
-  $("#feuille-racine").innerHTML = S.ecran !== "jeu" ? "" : S.bilan ? vueBilan() : S.profilOuvert ? vueProfil() : "";
+  $("#feuille-racine").innerHTML = S.ecran !== "jeu" ? "" : S.bilan ? vueBilan() : S.profilOuvert ? vueProfil() : S.batiment ? vueBatiment() : "";
+  const place = $("#monde-place");
+  if (place && S.etat) Monde.attacher(place);
   if (S.chat) rendreFil();
 
   if (focus) {
@@ -1944,10 +2550,20 @@ document.addEventListener("submit", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (S.chat) fermerChat();
-  else if (S.bilan) { S.bilan = null; rendre(); }
-  else if (S.profilOuvert) { S.profilOuvert = null; rendre(); }
+  if (e.key === "Escape") {
+    if (S.chat) fermerChat();
+    else if (S.bilan) { S.bilan = null; rendre(); }
+    else if (S.profilOuvert) { S.profilOuvert = null; rendre(); }
+    else if (S.batiment) { S.batiment = null; rendre(); }
+    return;
+  }
+  // Marcher au clavier sur ordinateur (flèches ou ZQSD), Entrée pour entrer dans un bâtiment
+  const libre = S.ecran === "jeu" && S.onglet === "quartier" && !S.chat && !S.bilan && !S.profilOuvert && !S.batiment
+    && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
+  if (!libre) return;
+  const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], z: [0, -1], s: [0, 1], q: [-1, 0], d: [1, 0], w: [0, -1], a: [-1, 0] }[e.key];
+  if (dir) { e.preventDefault(); Monde.pas(...dir); }
+  if (e.key === "Enter" || e.key === "e") Monde.entrerIci();
 });
 
 document.addEventListener("click", (e) => {
@@ -1963,7 +2579,7 @@ document.addEventListener("click", (e) => {
     case "genre": S.brouillon.genre = valeur; rendre(); break;
     case "look": S.brouillon.look[cle] = cle === "coiffure" ? valeur : Number(valeur); rendre(); break;
     case "naitre": Actions.naitre(); break;
-    case "commencer": S.ecran = "jeu"; S.onglet = "vie"; rendre(); window.scrollTo(0, 0); break;
+    case "commencer": S.ecran = "jeu"; S.onglet = "quartier"; rendre(); window.scrollTo(0, 0); break;
     case "onglet": S.onglet = valeur; rendre(); window.scrollTo(0, 0); break;
     case "sous-onglet": S.sousOnglet = valeur; rendre(); break;
     case "activite": jouer((j) => Moteur.activite(j, valeur)); break;
@@ -1978,6 +2594,7 @@ document.addEventListener("click", (e) => {
     case "fermer-bilan": S.bilan = null; rendre(); break;
     case "profil": S.profilOuvert = valeur; S.confirmerRupture = false; rendre(); break;
     case "fermer-feuille": S.profilOuvert = null; rendre(); break;
+    case "fermer-batiment": S.batiment = null; rendre(); break;
     case "chat": S.profilOuvert = null; rendre(); ouvrirChat(valeur); break;
     case "fermer-chat": fermerChat(); rendre(); break;
     case "ami": Actions.demanderAmi(valeur); break;

@@ -27,6 +27,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- Position dans le quartier (une écriture par déplacement) ----------
+    match /positions/{uid} {
+      allow read: if connecte();
+      allow write: if connecte() && moi() == uid
+        && request.resource.data.keys().hasOnly(['quartier', 'x', 'y', 'maj'])
+        && request.resource.data.quartier is string
+        && request.resource.data.x is int && request.resource.data.x >= 0 && request.resource.data.x < 40
+        && request.resource.data.y is int && request.resource.data.y >= 0 && request.resource.data.y < 30
+        && request.resource.data.maj == request.time;
+      allow delete: if connecte() && moi() == uid;
+    }
+
     // ---------- Partie privée ----------
     match /etats/{uid} {
       allow read, write: if connecte() && moi() == uid;

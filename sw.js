@@ -1,6 +1,6 @@
 /* Service worker : permet d'installer le jeu sur le téléphone et de l'ouvrir même avec un mauvais réseau.
    Les données du jeu (Firebase) ne passent jamais par ce cache. */
-const CACHE = "babi-58957cf7";
+const CACHE = "babi-fbdd7aa1";
 const FICHIERS = ["./", "./index.html", "./config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
