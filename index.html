@@ -1,0 +1,2028 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>La Vie à Babi</title>
+<meta name="description" content="Jeu de simulation de vie multijoueur à Abidjan : travaille, fais-toi des amis, trouve l'amour et fais ta dot.">
+<meta name="theme-color" content="#16100c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="La Vie à Babi">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+[hidden] { display: none !important; }
+/* Layout : app mobile en une colonne (max 560px), en-tête joueur, onglets en bas, bouton « Mois suivant » au-dessus.
+   Monde unique sombre et chaud : brun nuit, orange et vert ivoiriens. */
+:root {
+  --bg: #16100c;
+  --surface: #211912;
+  --surface-2: #2b2118;
+  --line: #3b2e23;
+  --fg: #f7efe5;
+  --muted: #b5a493;
+  --orange: #f28a22;
+  --green: #1aa36b;
+  --danger: #e2553f;
+  --ink-on-orange: #1d1209;
+  --voile: rgb(0 0 0 / .62);
+  --font-display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--bg);
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+#app { max-width: 560px; margin: 0 auto; padding-block: 18px 40px; }
+#app.avec-nav { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+
+/* ---------- Marque ---------- */
+.titre {
+  font-family: var(--font-display); font-weight: 800; line-height: 1;
+  font-size: clamp(40px, 12vw, 58px); letter-spacing: -0.02em; margin: 26px 0 0; text-wrap: balance;
+}
+.titre .babi { color: var(--orange); display: block; }
+.drapeau { display: flex; width: 180px; height: 6px; border-radius: 3px; overflow: hidden; margin: 16px 0 18px; }
+.drapeau span { flex: 1; }
+.drapeau span:nth-child(1) { background: var(--orange); }
+.drapeau span:nth-child(2) { background: var(--fg); }
+.drapeau span:nth-child(3) { background: var(--green); }
+.accroche { color: var(--muted); font-size: 17px; max-width: 60ch; margin: 0 0 22px; }
+
+/* ---------- Formulaires ---------- */
+.label { display: block; font-weight: 700; font-size: 14px; margin: 16px 0 8px; }
+.champ {
+  width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg); font-size: 16px; font-family: inherit;
+}
+.champ::placeholder { color: var(--muted); opacity: .75; }
+.segment { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--surface); padding: 5px; border-radius: 14px; border: 1px solid var(--line); }
+.segment button { border: 0; background: transparent; padding: 11px 8px; border-radius: 10px; font-weight: 600; color: var(--muted); }
+.segment button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; border: 0; border-radius: 16px;
+  padding: 15px 16px; font-weight: 700; font-size: 16px; background: var(--orange); color: var(--ink-on-orange);
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.secondaire { background: var(--surface-2); color: var(--fg); border: 1px solid var(--line); }
+.btn.danger { background: transparent; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent); }
+.lien { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 6px 0; font-size: 14px; }
+.erreur { color: var(--danger); font-size: 14px; margin: 10px 0 0; min-height: 1em; }
+.note { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+.bandeau-demo {
+  background: color-mix(in srgb, var(--orange) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--orange) 45%, transparent);
+  border-radius: 12px; padding: 9px 12px; font-size: 13px; margin-bottom: 14px;
+}
+
+/* ---------- Création ---------- */
+.look { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
+.look .options { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.look .sous { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 4px; }
+.pastilles { display: flex; flex-wrap: wrap; gap: 8px; }
+.pastille { width: 32px; height: 32px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+.pastille[aria-pressed="true"] { border-color: var(--orange); }
+.choix { display: flex; flex-wrap: wrap; gap: 6px; }
+.puce { padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line); background: transparent; font-size: 13px; color: var(--muted); }
+.puce[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+
+/* ---------- Avatar ---------- */
+.ava { position: relative; flex: none; border-radius: 24%; background: var(--surface-2); overflow: visible; }
+.ava svg { width: 100%; height: 100%; display: block; border-radius: inherit; }
+.ava .pt { position: absolute; right: -2px; bottom: -2px; width: 26%; height: 26%; min-width: 10px; min-height: 10px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg); }
+
+/* ---------- Naissance ---------- */
+.naissance { padding-top: 34px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: 12px; color: var(--muted); font-weight: 700; }
+.naissance h2 { font-family: var(--font-display); font-size: clamp(28px, 8.5vw, 40px); line-height: 1.08; margin: 8px 0 12px; text-wrap: balance; }
+.naissance h2 em { font-style: normal; color: var(--orange); }
+.carte { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+.grille2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.case { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.case small { display: block; color: var(--muted); font-size: 12px; }
+.case strong { font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* ---------- En-tête de jeu ---------- */
+.entete { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.entete h1 { font-family: var(--font-display); font-size: 19px; margin: 0; line-height: 1.2; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 13px; }
+.icone-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 8px 10px; font-size: 13px; color: var(--muted); }
+.argent { font-family: var(--font-display); font-weight: 600; font-size: 24px; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+.argent.negatif { color: var(--danger); }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 8px 0 6px; }
+.stat small { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.barre { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.barre i { display: block; height: 100%; border-radius: 3px; background: var(--green); transition: width .4s; }
+.barre i.bas { background: var(--danger); }
+.barre i.orange { background: var(--orange); }
+
+/* ---------- Listes et tuiles ---------- */
+.section-titre { font-family: var(--font-display); font-size: 16px; font-weight: 600; margin: 22px 0 10px; }
+.liste { display: flex; flex-direction: column; gap: 8px; }
+.action {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left;
+  width: 100%; padding: 13px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line);
+}
+.action:not(:disabled):hover { border-color: var(--orange); }
+.action:disabled { opacity: .45; cursor: not-allowed; }
+.action strong { display: block; font-size: 15px; }
+.action span { display: block; color: var(--muted); font-size: 13px; }
+.action .cout { font-size: 13px; font-weight: 700; color: var(--fg); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.etiquette { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--fg); white-space: nowrap; }
+.etiquette.vert { background: color-mix(in srgb, var(--green) 28%, transparent); }
+.etiquette.orange { background: color-mix(in srgb, var(--orange) 28%, transparent); }
+.vide { color: var(--muted); font-size: 14px; background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 14px; }
+.chargement { color: var(--muted); font-size: 14px; padding: 14px 2px; }
+
+.joueur {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line);
+}
+.joueur:hover { border-color: var(--orange); }
+.joueur .nom { font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joueur .sous { color: var(--muted); font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joueur.moi { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 10%, var(--surface)); }
+.rang-num { font-family: var(--font-display); font-weight: 600; font-size: 15px; width: 28px; text-align: center; color: var(--muted); }
+.rang-num.top { color: var(--orange); }
+.pastille-nb { min-width: 20px; height: 20px; border-radius: 10px; background: var(--orange); color: var(--ink-on-orange); font-size: 12px; font-weight: 700; display: inline-grid; place-items: center; padding: 0 6px; }
+
+.sous-onglets { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; margin-top: 14px; scrollbar-width: none; }
+.sous-onglets button { flex: none; border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.sous-onglets button[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* ---------- Barre du bas ---------- */
+.bas-fixe {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--bg); border-top: 1px solid var(--line);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.bas-fixe .interieur { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.btn-mois { justify-content: space-between; padding: 13px 16px; }
+.btn-mois small { font-weight: 600; opacity: .75; }
+.onglets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.onglets button { border: 0; background: transparent; padding: 7px 2px; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--muted); position: relative; }
+.onglets button[aria-selected="true"] { background: var(--surface-2); color: var(--fg); }
+.onglets .pastille-nb { position: absolute; top: -4px; right: 8%; min-width: 18px; height: 18px; font-size: 11px; }
+
+/* ---------- Perf ---------- */
+.score { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: center; }
+.score .valeur { font-family: var(--font-display); font-weight: 800; font-size: 44px; line-height: 1; color: var(--orange); font-variant-numeric: tabular-nums; }
+.score .rang { font-weight: 700; font-size: 17px; }
+.chiffres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.succes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.badge { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: var(--surface); min-width: 0; }
+.badge strong { display: block; font-size: 14px; }
+.badge span { display: block; color: var(--muted); font-size: 12px; }
+.badge.obtenu { border-color: var(--green); background: color-mix(in srgb, var(--green) 14%, var(--surface)); }
+.badge:not(.obtenu) { opacity: .6; }
+.graphe { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 12px 6px; }
+.graphe svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.bulle-graphe { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, -115%); font-variant-numeric: tabular-nums; }
+.journal { display: flex; flex-direction: column; gap: 6px; }
+.journal div { background: var(--surface); border-radius: 12px; padding: 10px 12px; font-size: 14px; border: 1px solid var(--line); }
+.journal small { display: block; color: var(--muted); font-size: 12px; }
+.boutique { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+
+/* ---------- Feuilles (profil, bilan) ---------- */
+.voile { position: fixed; inset: 0; background: var(--voile); z-index: 20; display: grid; place-items: end center; padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.feuille { width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 18px; max-height: 88vh; overflow-y: auto; overscroll-behavior: contain; }
+.feuille h3 { font-family: var(--font-display); font-size: 20px; margin: 0 0 12px; }
+.feuille .tete { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+.feuille .tete h3 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.etiquettes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.question { background: color-mix(in srgb, var(--orange) 14%, var(--surface-2)); border-radius: 14px; padding: 14px; }
+.question p { margin: 0 0 12px; font-weight: 700; }
+.deux { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bilan ul { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.bilan li { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.bilan li b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plus { color: var(--green); }
+.moins { color: var(--danger); }
+
+/* ---------- Chat ---------- */
+.chat { position: fixed; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column; }
+.chat .barre-haut {
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 10px; align-items: center; border-bottom: 1px solid var(--line);
+  padding: calc(10px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px));
+}
+.chat .barre-haut strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat .fil { flex: 1; overflow-y: auto; padding: 12px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 6px; }
+.chat .fil > * { max-width: 560px; width: 100%; margin-inline: auto; }
+.msg { display: flex; }
+.msg.moi { justify-content: flex-end; }
+.msg div { max-width: 78%; padding: 8px 12px; border-radius: 16px 16px 16px 4px; background: var(--surface-2); overflow-wrap: anywhere; white-space: pre-wrap; }
+.msg.moi div { background: var(--orange); color: var(--ink-on-orange); border-radius: 16px 16px 4px 16px; }
+.msg small { display: block; text-align: right; font-size: 10px; opacity: .7; }
+.chat form {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-top: 1px solid var(--line);
+  padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.chat form .btn { width: auto; padding: 12px 16px; }
+
+#toast {
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(14px + env(safe-area-inset-top, 0px)); z-index: 40;
+  background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 14px;
+  max-width: min(480px, calc(100% - 32px)); box-shadow: 0 8px 24px rgb(0 0 0 / .35);
+}
+.ecran-centre { min-height: 70vh; display: grid; place-items: center; color: var(--muted); text-align: center; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+</style>
+<script src="config.js?v=58957cf7"></script>
+</head>
+<body>
+<div id="app"></div>
+<div id="feuille-racine"></div>
+<div id="chat-racine"></div>
+<div id="toast" role="status" hidden></div>
+<script>
+"use strict";
+/* =====================================================================
+   PARTIE 1 — LE MONDE ET LES RÈGLES DU JEU
+   Aucune dépendance au serveur ni à l'écran.
+   Pour ajouter un métier, un quartier ou un événement : une ligne ici.
+   ===================================================================== */
+
+const QUARTIERS = [
+  { id: "abobo",       nom: "Abobo",       type: "populaire", argent: 50000,  loyer: 15000,  poids: 5 },
+  { id: "yopougon",    nom: "Yopougon",    type: "populaire", argent: 55000,  loyer: 20000,  poids: 5 },
+  { id: "adjame",      nom: "Adjamé",      type: "populaire", argent: 52000,  loyer: 18000,  poids: 5 },
+  { id: "koumassi",    nom: "Koumassi",    type: "populaire", argent: 55000,  loyer: 20000,  poids: 5 },
+  { id: "treichville", nom: "Treichville", type: "moyen",     argent: 100000, loyer: 35000,  poids: 3 },
+  { id: "marcory",     nom: "Marcory",     type: "moyen",     argent: 120000, loyer: 50000,  poids: 3 },
+  { id: "riviera",     nom: "Riviera",     type: "chic",      argent: 300000, loyer: 120000, poids: 1 },
+  { id: "cocody",      nom: "Cocody",      type: "chic",      argent: 350000, loyer: 150000, poids: 1 },
+  { id: "zone4",       nom: "Zone 4",      type: "chic",      argent: 400000, loyer: 180000, poids: 1 },
+];
+const TYPE_QUARTIER = {
+  populaire: { label: "Quartier populaire", rep: 5,  diplome: [1, 2], popote: 20000, repDemenagement: 0 },
+  moyen:     { label: "Quartier moyen",     rep: 15, diplome: [2, 3], popote: 30000, repDemenagement: 5 },
+  chic:      { label: "Quartier chic",      rep: 30, diplome: [3, 3], popote: 45000, repDemenagement: 10 },
+};
+const DIPLOMES = [
+  { nom: "Aucun diplôme", frais: 0 },
+  { nom: "CEPE", frais: 10000 },
+  { nom: "BEPC", frais: 25000 },
+  { nom: "BAC", frais: 50000 },
+  { nom: "BTS", frais: 300000 },
+  { nom: "Licence", frais: 400000 },
+  { nom: "Master", frais: 600000 },
+];
+const METIERS = [
+  { id: "garba",    nom: "Vendeur·se de garba",          diplome: 0, rep: 0,  salaire: 45000,   energie: 35 },
+  { id: "couture",  nom: "Apprenti·e couturier·ère",     diplome: 0, rep: 0,  salaire: 40000,   energie: 30 },
+  { id: "woro",     nom: "Chauffeur de woro-woro",       diplome: 0, rep: 10, salaire: 80000,   energie: 40 },
+  { id: "commerce", nom: "Commerçant·e à Adjamé",        diplome: 1, rep: 10, salaire: 90000,   energie: 35 },
+  { id: "caisse",   nom: "Caissier·ère en supermarché",  diplome: 2, rep: 10, salaire: 110000,  energie: 30 },
+  { id: "callc",    nom: "Agent de call center",         diplome: 3, rep: 15, salaire: 150000,  energie: 30 },
+  { id: "prof",     nom: "Enseignant·e",                 diplome: 4, rep: 25, salaire: 220000,  energie: 30 },
+  { id: "compta",   nom: "Comptable",                    diplome: 5, rep: 35, salaire: 350000,  energie: 30 },
+  { id: "info",     nom: "Ingénieur·e informaticien·ne", diplome: 6, rep: 45, salaire: 600000,  energie: 35 },
+  { id: "dg",       nom: "Directeur·rice d'entreprise",  diplome: 6, rep: 75, salaire: 1200000, energie: 40 },
+];
+const ACTIVITES = [
+  { id: "garba",  nom: "Manger un garba",        detail: "Attiéké, thon frit, piment",   prix: 500,   energie: 5,  effets: { sante: 3, bonheur: 3 } },
+  { id: "maquis", nom: "Sortir au maquis",       detail: "Poulet braisé et ambiance",     prix: 5000,  energie: 20, effets: { bonheur: 10, sante: -2, rep: 3 } },
+  { id: "sport",  nom: "Faire du sport",         detail: "Footing sur le boulevard",      prix: 0,     energie: 20, effets: { sante: 8, bonheur: 2 } },
+  { id: "repos",  nom: "Se reposer à la maison", detail: "Sieste et série à la télé",     prix: 0,     energie: 10, effets: { sante: 5, bonheur: 3 } },
+  { id: "bassam", nom: "Week-end à Bassam",      detail: "Plage et poisson grillé",       prix: 15000, energie: 30, effets: { bonheur: 18, sante: 2 } },
+  { id: "allo",   nom: "Allocodrome entre amis", detail: "Alloco, brochettes, causeries", prix: 3000,  energie: 15, effets: { bonheur: 7, rep: 2 } },
+];
+const MEUBLES = [
+  { id: "matelas", nom: "Matelas neuf",    prix: 25000,  bonheur: 3 },
+  { id: "ventilo", nom: "Ventilateur",     prix: 20000,  bonheur: 3 },
+  { id: "canape",  nom: "Canapé en pagne", prix: 120000, bonheur: 6 },
+  { id: "tele",    nom: "Télé écran plat", prix: 150000, bonheur: 8 },
+  { id: "frigo",   nom: "Frigo",           prix: 180000, bonheur: 6 },
+  { id: "clim",    nom: "Climatiseur",     prix: 300000, bonheur: 10 },
+];
+const EVENEMENTS = [
+  { texte: "Coupure de courant toute la soirée chez toi.", effets: { bonheur: -5 } },
+  { texte: "Tu gagnes le tournoi de damier du quartier.", effets: { argent: 10000, bonheur: 4 } },
+  { texte: "Ton téléphone est tombé dans le caniveau.", effets: { argent: -15000, bonheur: -6 } },
+  { texte: "Mariage au village : tu cotises pour la famille.", effets: { argent: -20000, rep: 5 } },
+  { texte: "Grosse pluie, la route est inondée. Tu rentres trempé{e}.", effets: { sante: -6 } },
+  { texte: "Un cousin de Paris t'envoie un peu d'argent.", effets: { argent: 25000, bonheur: 3 } },
+  { texte: "Ta voisine te ramène un plat d'attiéké poisson.", effets: { sante: 4, bonheur: 4 } },
+  { texte: "Ton post sur les réseaux fait le buzz dans le quartier.", effets: { rep: 8, bonheur: 3 } },
+  { texte: "Embouteillage monstre sur le pont : journée perdue.", effets: { bonheur: -4 } },
+  { texte: "Tu tombes malade : palu. Visite au dispensaire.", effets: { sante: -12, argent: -8000 } },
+];
+const RANGS = [
+  { min: 0,   nom: "Petit débrouillard" },
+  { min: 150, nom: "Bosseur du quartier" },
+  { min: 250, nom: "Grand frère respecté" },
+  { min: 380, nom: "Boss de Babi" },
+  { min: 520, nom: "Légende d'Abidjan" },
+];
+const SUCCES = [
+  { id: "salaire", nom: "Premier salaire",     detail: "Encaisser une paie",          test: (j) => j.stats.gagne > 0 },
+  { id: "bac",     nom: "Bachelier·ère",       detail: "Avoir le BAC",                test: (j) => j.diplome >= 3 },
+  { id: "master",  nom: "Grand diplômé",       detail: "Obtenir le Master",           test: (j) => j.diplome >= 6 },
+  { id: "amis",    nom: "Connu·e au quartier", detail: "Avoir 5 ami·e·s",             test: (j, s) => s.amis >= 5 },
+  { id: "couple",  nom: "Le cœur a parlé",     detail: "Sortir avec quelqu'un",       test: (j, s) => s.enCouple || s.marie },
+  { id: "dot",     nom: "Dot acceptée",        detail: "Se marier",                   test: (j, s) => s.marie },
+  { id: "chic",    nom: "Cocody life",         detail: "Vivre dans un quartier chic", test: (j) => quartierDe(j.quartier).type === "chic" },
+  { id: "maison",  nom: "Maison équipée",      detail: "Acheter les 6 objets",        test: (j) => j.maison.length >= MEUBLES.length },
+  { id: "million", nom: "Millionnaire",        detail: "Avoir 1 000 000 F",           test: (j) => j.argent >= 1000000 },
+  { id: "boss",    nom: "Boss de Babi",        detail: "Devenir directeur·rice",      test: (j) => j.metier === "dg" },
+  { id: "an",      nom: "Un an à Babi",        detail: "Jouer 12 mois",               test: (j) => j.mois > 12 },
+  { id: "respect", nom: "Respecté·e",          detail: "Atteindre 80 de réputation",  test: (j) => j.rep >= 80 },
+];
+
+/* Interactions entre vrais joueurs */
+const PRIX_DOT = 250000;
+const AFFINITE_COUPLE = 50;
+const AFFINITE_DOT = 80;
+const INTERACTIONS = [
+  { id: "discuter", label: "Discuter",         energie: 5,  prix: 0,     gain: 7 },
+  { id: "maquis",   label: "Maquis ensemble",  energie: 15, prix: 5000,  gain: 14 },
+  { id: "cadeau",   label: "Offrir un cadeau", energie: 5,  prix: 10000, gain: 18 },
+];
+const STATUTS = {
+  demande_ami: "Demande d'amitié",
+  ami: "Ami·e",
+  demande_couple: "Demande de couple",
+  couple: "En couple",
+  demande_dot: "Dot proposée",
+  marie: "Marié·e",
+};
+
+/* Apparence */
+const PEAUX = ["#f1d0b0", "#d9a77c", "#b97d4f", "#8f5a33", "#6b3f22", "#4a2a17"];
+const TENUES = ["#f28a22", "#1aa36b", "#e2553f", "#3b6fd8", "#f4c430", "#7d4bb3"];
+const COIFFURES = [
+  { id: "afro", nom: "Afro" }, { id: "tresses", nom: "Tresses" }, { id: "ras", nom: "Ras" },
+  { id: "chignon", nom: "Chignon" }, { id: "foulard", nom: "Foulard" },
+];
+const PRENOMS = {
+  femme: ["Aya", "Adjoua", "Akissi", "Mariam", "Fatou", "Awa", "Affoué", "Amenan", "Salimata", "Nadège", "Grâce", "Bintou"],
+  homme: ["Kouassi", "Yao", "Konan", "Moussa", "Bakary", "Serge", "Didier", "Koffi", "Ibrahim", "Arnaud", "Lassina", "Hervé"],
+};
+const NOMS = ["Koné", "Kouamé", "Traoré", "Ouattara", "Yao", "Bamba", "Coulibaly", "N'Guessan", "Diabaté", "Kouadio", "Touré", "Kassi"];
+
+/* ---------- Outils ---------- */
+const hasard = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const auHasard = (liste) => liste[Math.floor(Math.random() * liste.length)];
+const borne = (v) => Math.max(0, Math.min(100, Math.round(v)));
+const fcfa = (n) => (n < 0 ? "−" : "") + Math.abs(Math.round(n)).toLocaleString("fr-FR") + " F";
+const accord = (genre, m, f) => (genre === "femme" ? f : m);
+const quartierDe = (id) => QUARTIERS.find((q) => q.id === id) || QUARTIERS[0];
+const metierDe = (id) => METIERS.find((m) => m.id === id) || null;
+const idPaire = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+const cleNom = (nom) => nom.trim().toLowerCase();
+
+class ErreurJeu extends Error {}
+
+/* ---------- Moteur : règles d'une partie ---------- */
+const Moteur = {
+  naitre({ nom, genre, look }) {
+    const total = QUARTIERS.reduce((s, q) => s + q.poids, 0);
+    let r = Math.random() * total;
+    let q = QUARTIERS[QUARTIERS.length - 1];
+    for (const x of QUARTIERS) { r -= x.poids; if (r < 0) { q = x; break; } }
+    const t = TYPE_QUARTIER[q.type];
+    const j = {
+      nom, genre, look,
+      quartier: q.id, ageMois: 18 * 12, mois: 1,
+      argent: q.argent, sante: 80, bonheur: 60, rep: t.rep, energie: 100,
+      diplome: hasard(t.diplome[0], t.diplome[1]), etude: null,
+      metier: null, travailCeMois: 0, maison: [],
+      stats: { gagne: 0, succes: [], histo: [{ mois: 1, argent: q.argent }] },
+      journal: [],
+    };
+    Moteur.noter(j, `${accord(genre, "Né", "Née")} à ${q.nom}. Ta vie à Babi commence.`);
+    return j;
+  },
+
+  noter(j, texte) {
+    j.journal.unshift({ quand: `Mois ${j.mois} · ${Math.floor(j.ageMois / 12)} ans`, texte });
+    if (j.journal.length > 60) j.journal.length = 60;
+  },
+
+  appliquer(j, effets) {
+    for (const [cle, val] of Object.entries(effets)) {
+      if (!val) continue;
+      if (cle === "argent") j.argent += val;
+      else j[cle] = borne(j[cle] + val);
+    }
+  },
+
+  activite(j, id) {
+    const a = ACTIVITES.find((x) => x.id === id);
+    if (!a) return echec("Activité inconnue.");
+    if (j.energie < a.energie) return echec("Pas assez d'énergie ce mois-ci.");
+    if (j.argent < a.prix) return echec(`Il te faut ${fcfa(a.prix)}.`);
+    j.energie -= a.energie;
+    j.argent -= a.prix;
+    Moteur.appliquer(j, a.effets);
+    return ok(`${a.nom} ✓`);
+  },
+
+  postuler(j, id) {
+    const m = metierDe(id);
+    if (!m) return echec("Métier inconnu.");
+    if (j.metier === id) return echec("Tu fais déjà ce travail.");
+    if (j.diplome < m.diplome) return echec(`Il faut au moins le ${DIPLOMES[m.diplome].nom}.`);
+    if (j.rep < m.rep) return echec(`Il faut ${m.rep} de réputation.`);
+    if (j.energie < 10) return echec(`Trop ${accord(j.genre, "fatigué", "fatiguée")} pour un entretien.`);
+    j.energie -= 10;
+    if (Math.random() < 0.3) {
+      Moteur.noter(j, `Entretien raté pour le poste de ${m.nom}.`);
+      return echec("Entretien raté. Réessaie plus tard.");
+    }
+    j.metier = id;
+    j.travailCeMois = 0;
+    Moteur.noter(j, `${accord(j.genre, "Embauché", "Embauchée")} : ${m.nom}.`);
+    return ok(`Tu es ${accord(j.genre, "embauché", "embauchée")} !`);
+  },
+
+  travailler(j) {
+    const m = metierDe(j.metier);
+    if (!m) return echec("Trouve d'abord un travail.");
+    if (j.travailCeMois >= 2) return echec("Tu as fini tes heures ce mois-ci.");
+    if (j.energie < m.energie) return echec("Pas assez d'énergie pour travailler.");
+    j.energie -= m.energie;
+    j.travailCeMois += 1;
+    const paie = Math.round(m.salaire / 2);
+    j.argent += paie;
+    j.stats.gagne += paie;
+    j.rep = borne(j.rep + 1);
+    return ok(`+${fcfa(paie)} encaissés`);
+  },
+
+  demissionner(j) {
+    const m = metierDe(j.metier);
+    if (!m) return echec("Tu n'as pas de travail.");
+    Moteur.noter(j, `Tu as quitté ton poste de ${m.nom}.`);
+    j.metier = null;
+    j.travailCeMois = 0;
+    return ok("Tu as démissionné.");
+  },
+
+  inscrire(j) {
+    const suivant = j.diplome + 1;
+    if (suivant >= DIPLOMES.length) return echec("Tu as déjà le plus haut diplôme.");
+    if (j.etude) return echec("Tu es déjà en formation.");
+    const frais = DIPLOMES[suivant].frais;
+    if (j.argent < frais) return echec(`Frais d'inscription : ${fcfa(frais)}.`);
+    j.argent -= frais;
+    j.etude = { niveau: suivant, progres: 0 };
+    Moteur.noter(j, `${accord(j.genre, "Inscrit", "Inscrite")} pour préparer le ${DIPLOMES[suivant].nom}.`);
+    return ok("Inscription validée.");
+  },
+
+  etudier(j) {
+    if (!j.etude) return echec("Inscris-toi d'abord.");
+    if (j.energie < 35) return echec(`Trop ${accord(j.genre, "fatigué", "fatiguée")} pour réviser.`);
+    j.energie -= 35;
+    j.etude.progres = Math.min(100, j.etude.progres + hasard(20, 32));
+    if (j.etude.progres >= 100) {
+      j.diplome = j.etude.niveau;
+      j.etude = null;
+      j.rep = borne(j.rep + 6);
+      j.bonheur = borne(j.bonheur + 10);
+      Moteur.noter(j, `Diplôme obtenu : ${DIPLOMES[j.diplome].nom} !`);
+      return ok(`Félicitations, ${DIPLOMES[j.diplome].nom} en poche !`);
+    }
+    return ok(`Révisions : ${j.etude.progres} %`);
+  },
+
+  acheter(j, id) {
+    const m = MEUBLES.find((x) => x.id === id);
+    if (!m) return echec("Objet inconnu.");
+    if (j.maison.includes(id)) return echec("Tu l'as déjà.");
+    if (j.argent < m.prix) return echec(`Il te faut ${fcfa(m.prix)}.`);
+    j.argent -= m.prix;
+    j.maison.push(id);
+    j.bonheur = borne(j.bonheur + m.bonheur);
+    Moteur.noter(j, `Achat : ${m.nom}.`);
+    return ok(`${m.nom} installé chez toi.`);
+  },
+
+  demenager(j, id) {
+    const q = QUARTIERS.find((x) => x.id === id);
+    if (!q || q.id === j.quartier) return echec("Choisis un autre quartier.");
+    const caution = q.loyer * 3;
+    if (j.argent < caution) return echec(`Il faut ${fcfa(caution)} de caution.`);
+    const avant = TYPE_QUARTIER[quartierDe(j.quartier).type].repDemenagement;
+    j.argent -= caution;
+    j.quartier = q.id;
+    j.rep = borne(j.rep + TYPE_QUARTIER[q.type].repDemenagement - avant);
+    Moteur.noter(j, `Déménagement à ${q.nom}.`);
+    return ok(`Bienvenue à ${q.nom} !`);
+  },
+
+  /** Débite le coût d'une interaction avec un autre joueur (rendu par rembourser si l'envoi échoue). */
+  payer(j, { energie = 0, prix = 0 }) {
+    if (j.energie < energie) return echec("Pas assez d'énergie.");
+    if (j.argent < prix) return echec(`Il te faut ${fcfa(prix)}.`);
+    j.energie -= energie;
+    j.argent -= prix;
+    return ok("");
+  },
+  rembourser(j, { energie = 0, prix = 0 }) {
+    j.energie = borne(j.energie + energie);
+    j.argent += prix;
+  },
+
+  moisSuivant(j, social) {
+    const lignes = [];
+    const q = quartierDe(j.quartier);
+    const t = TYPE_QUARTIER[q.type];
+    j.argent -= q.loyer;  lignes.push({ texte: `Loyer à ${q.nom}`, valeur: -q.loyer, unite: "argent" });
+    j.argent -= t.popote; lignes.push({ texte: "Popote du mois", valeur: -t.popote, unite: "argent" });
+    if (j.metier && j.travailCeMois === 0) {
+      j.rep = borne(j.rep - 4);
+      lignes.push({ texte: accord(j.genre, "Absent au travail", "Absente au travail"), valeur: -4, unite: "rep" });
+    }
+    j.sante = borne(j.sante - 3);
+    j.bonheur = borne(j.bonheur - 3 + (j.maison.length >= 3 ? 2 : 0) + (social.marie ? 2 : 0));
+    if (Math.random() < 0.6) {
+      const ev = auHasard(EVENEMENTS);
+      const texte = ev.texte.replace("{e}", accord(j.genre, "", "e"));
+      Moteur.appliquer(j, ev.effets);
+      Moteur.noter(j, texte);
+      lignes.push({ texte });
+    }
+    if (j.argent < 0) {
+      j.bonheur = borne(j.bonheur - 8);
+      lignes.push({ texte: "Tu es dans le rouge : les dettes pèsent", valeur: -8, unite: "bonheur" });
+    }
+    if (j.sante <= 0) {
+      j.argent -= 50000;
+      j.sante = 40;
+      Moteur.noter(j, "Hospitalisation au CHU. Prends soin de toi.");
+      lignes.push({ texte: "Hospitalisation au CHU", valeur: -50000, unite: "argent" });
+    }
+    j.energie = 100;
+    j.travailCeMois = 0;
+    j.ageMois += 1;
+    j.mois += 1;
+    j.stats.histo.push({ mois: j.mois, argent: j.argent });
+    if (j.stats.histo.length > 48) j.stats.histo.shift();
+    if (j.ageMois % 12 === 0) {
+      Moteur.noter(j, `Joyeux anniversaire ! Tu as ${j.ageMois / 12} ans.`);
+      lignes.push({ texte: `Anniversaire : ${j.ageMois / 12} ans` });
+    }
+    return lignes;
+  },
+
+  verifierSucces(j, social) {
+    const nouveaux = SUCCES.filter((s) => !j.stats.succes.includes(s.id) && s.test(j, social));
+    for (const s of nouveaux) {
+      j.stats.succes.push(s.id);
+      Moteur.noter(j, `Succès débloqué : ${s.nom}.`);
+    }
+    return nouveaux;
+  },
+
+  score(j, social) {
+    const fortune = Math.min(150, Math.floor(Math.max(0, j.argent) / 20000));
+    return Math.round(j.rep * 1.5 + j.bonheur + j.sante * 0.5 + j.diplome * 15 + social.amis * 6
+      + (social.marie ? 50 : 0) + j.maison.length * 5 + fortune + j.stats.succes.length * 10);
+  },
+
+  rang(score) {
+    let r = RANGS[0];
+    for (const x of RANGS) if (score >= x.min) r = x;
+    return { rang: r, suivant: RANGS[RANGS.indexOf(r) + 1] || null };
+  },
+
+  profilPublic(j, score) {
+    return {
+      nom: j.nom, nomMinuscule: cleNom(j.nom), genre: j.genre, look: j.look, quartier: j.quartier,
+      ageAns: Math.floor(j.ageMois / 12), metier: metierDe(j.metier)?.nom || "Sans emploi", rep: j.rep, score,
+    };
+  },
+};
+function ok(message) { return { ok: true, message }; }
+function echec(message) { return { ok: false, message }; }
+
+/* ---------- Relations entre joueurs ----------
+   Les mêmes règles servent au mode démo et à Firebase (et sont répétées dans firestore.rules). */
+const SUPPRIMER_CHAMP = "__supprimer__";
+const attendReponse = (r, moi) => r.statut.startsWith("demande_") && r.demandeur !== moi;
+
+function nouvelleRelation(moi, autre) {
+  return { membres: [moi, autre].sort(), statut: "demande_ami", demandeur: moi, affinite: 10 };
+}
+
+/** Calcule le changement d'une relation. Renvoie { patch } ou { supprimer: true }, et éventuellement { resultat }. */
+function regleRelation(r, action, moi, gain = 0) {
+  if (!r) throw new ErreurJeu("Vous n'êtes pas encore en contact.");
+  const s = r.statut;
+  switch (action) {
+    case "affinite":
+      if (s === "demande_ami") throw new ErreurJeu("Attends qu'il ou elle accepte ton amitié.");
+      return { patch: { affinite: Math.min(100, r.affinite + gain) }, resultat: Math.min(100, r.affinite + gain) };
+    case "couple":
+      if (s !== "ami") throw new ErreurJeu("Il faut d'abord être ami·e·s.");
+      if (r.affinite < AFFINITE_COUPLE) throw new ErreurJeu(`Votre affinité doit atteindre ${AFFINITE_COUPLE}.`);
+      return { patch: { statut: "demande_couple", demandeur: moi } };
+    case "dot":
+      if (s !== "couple") throw new ErreurJeu("Il faut d'abord être en couple.");
+      if (r.affinite < AFFINITE_DOT) throw new ErreurJeu(`Votre affinité doit atteindre ${AFFINITE_DOT}.`);
+      return { patch: { statut: "demande_dot", demandeur: moi } };
+    case "accepter": {
+      if (!attendReponse(r, moi)) throw new ErreurJeu("Aucune demande à accepter.");
+      const n = { demande_ami: "ami", demande_couple: "couple", demande_dot: "marie" }[s];
+      return { patch: { statut: n }, resultat: n };
+    }
+    case "refuser":
+      if (!attendReponse(r, moi)) throw new ErreurJeu("Aucune demande à refuser.");
+      if (s === "demande_ami") return { supprimer: true };
+      if (s === "demande_couple") return { patch: { statut: "ami" } };
+      return { patch: { statut: "couple", rembourserDot: r.demandeur } };
+    case "rompre":
+      if (s === "marie") throw new ErreurJeu("Un mariage ne se rompt pas comme ça !");
+      if (s === "demande_couple" || s === "demande_dot") throw new ErreurJeu("Attends d'abord la réponse à la demande en cours.");
+      if (s === "couple") return { patch: { statut: "ami", affinite: Math.max(0, r.affinite - 30) } };
+      return { supprimer: true };
+    case "encaisser":
+      if (r.rembourserDot !== moi) return { resultat: false };
+      return { patch: { rembourserDot: SUPPRIMER_CHAMP }, resultat: true };
+    default:
+      throw new ErreurJeu("Action inconnue.");
+  }
+}
+
+/** Normalise un profil public lu depuis le serveur. */
+function normaliserProfil(uid, d = {}, vuLeMs = 0) {
+  const vuLe = vuLeMs || 0;
+  return {
+    uid, nom: d.nom || "Joueur", genre: d.genre || "femme", look: d.look || { peau: 3, coiffure: "afro", tenue: 0 },
+    quartier: d.quartier || "abobo", ageAns: d.ageAns || 18, metier: d.metier || "Sans emploi",
+    rep: d.rep || 0, score: d.score || 0, enLigne: !!d.enLigne, vuLe, partenaire: d.partenaire || null,
+    actif: !!d.enLigne && Date.now() - vuLe < 3 * 60 * 1000,
+  };
+}
+
+/* =====================================================================
+   PARTIE 2 — LE SERVEUR
+   Deux versions avec exactement les mêmes fonctions :
+   - Firebase : le vrai multijoueur (quand config.js est rempli)
+   - Démo     : tout en mémoire, avec des joueurs simulés (rien n'est enregistré)
+   ===================================================================== */
+
+const copie = (x) => (x == null ? x : JSON.parse(JSON.stringify(x)));
+
+/* ---------------- Mode démo ---------------- */
+function creerServeurDemo() {
+  const comptes = new Map();        // email -> { uid, mdp }
+  const etats = new Map();          // uid -> partie
+  const profils = new Map();        // uid -> profil public (données brutes + vuLe)
+  const noms = new Set();
+  const relations = new Map();      // idPaire -> relation
+  const conversations = new Map();  // idPaire -> conversation
+  const messages = new Map();       // idPaire -> [message]
+  const ecouteurs = new Set();
+  let surAuth = () => {};
+  let courant = null;
+  const bots = new Set();
+
+  const emettre = () => { for (const f of [...ecouteurs]) f(); };
+  const suivre = (calcul, cb) => {
+    const f = () => cb(calcul());
+    ecouteurs.add(f);
+    setTimeout(f, 0);
+    return () => ecouteurs.delete(f);
+  };
+  const plusTard = (ms, f) => setTimeout(() => { f(); emettre(); }, ms);
+  const profilDe = (uid) => {
+    const p = profils.get(uid);
+    if (!p) return null;
+    return normaliserProfil(uid, p, bots.has(uid) ? Date.now() : p.vuLe);
+  };
+
+  // Joueurs simulés
+  const REPLIQUES = [
+    "On dit quoi ?", "Ça va un peu, et toi ?", "Tu es où ? On se voit au maquis ce soir ?",
+    "Babi est doux hein 😄", "Je suis au boulot là, on se parle tantôt.", "Djo, c'est comment ?",
+    "Ah toi aussi tu es dans le jeu ! 😂", "Il faut qu'on aille à Bassam un de ces quatre.",
+  ];
+  for (let i = 0; i < 7; i++) {
+    const genre = i % 2 ? "homme" : "femme";
+    const uid = "bot" + i;
+    const nom = `${PRENOMS[genre][(i * 5) % 12]} ${NOMS[(i * 7) % 12]}`;
+    const q = QUARTIERS[(i * 4) % QUARTIERS.length];
+    const m = METIERS[(i * 3) % 7];
+    bots.add(uid);
+    noms.add(cleNom(nom));
+    profils.set(uid, {
+      nom, nomMinuscule: cleNom(nom), genre, quartier: q.id, ageAns: 19 + i * 2, metier: m.nom,
+      rep: 10 + i * 9, score: 120 + i * 47, enLigne: i !== 6, vuLe: Date.now(), partenaire: null,
+      look: { peau: (i * 2) % 6, coiffure: COIFFURES[i % 5].id, tenue: (i * 2 + 1) % 6 },
+    });
+  }
+
+  function reagirBot(id) {
+    const r = relations.get(id);
+    if (!r) return;
+    const bot = r.membres.find((u) => bots.has(u));
+    if (!bot || !attendReponse(r, bot)) return;
+    plusTard(1500, () => {
+      const actuelle = relations.get(id);
+      if (!actuelle || !attendReponse(actuelle, bot)) return;
+      Object.assign(actuelle, regleRelation(actuelle, "accepter", bot).patch);
+    });
+  }
+
+  function relationModifiee(id, r, res) {
+    if (res.supprimer) relations.delete(id);
+    else if (res.patch) {
+      for (const [k, v] of Object.entries(res.patch)) {
+        if (v === SUPPRIMER_CHAMP) delete r[k]; else r[k] = v;
+      }
+    }
+    emettre();
+    reagirBot(id);
+    return res.resultat;
+  }
+
+  function demarrerAnimation(uid) {
+    // Un joueur simulé te demande en ami, puis t'écrit : pour voir tout de suite le multijoueur.
+    plusTard(8000, () => {
+      const id = idPaire("bot0", uid);
+      if (!relations.has(id)) relations.set(id, { id, ...nouvelleRelation("bot0", uid) });
+    });
+    plusTard(15000, () => ajouterMessage("bot3", uid, "Salut ! Bienvenue à Babi. Tu viens d'arriver ?"));
+  }
+
+  function ajouterMessage(auteur, dest, texte) {
+    const id = idPaire(auteur, dest);
+    const c = conversations.get(id) || { id, membres: [auteur, dest].sort(), nonLus: {} };
+    c.dernierMessage = texte.length > 80 ? texte.slice(0, 80) + "…" : texte;
+    c.majLe = Date.now();
+    c.nonLus[dest] = (c.nonLus[dest] || 0) + 1;
+    conversations.set(id, c);
+    const liste = messages.get(id) || [];
+    liste.unshift({ id: String(Math.random()), auteur, texte, envoyeLe: Date.now() });
+    messages.set(id, liste.slice(0, 100));
+  }
+
+  return {
+    demo: true,
+    surAuth(cb) { surAuth = cb; setTimeout(() => cb(courant), 0); return () => {}; },
+    async inscrire(email, mdp) {
+      const cle = email.trim().toLowerCase();
+      if (comptes.has(cle)) throw new ErreurJeu("Un compte existe déjà avec cet e-mail. Connecte-toi.");
+      const uid = "u" + Math.random().toString(36).slice(2, 10);
+      comptes.set(cle, { uid, mdp });
+      courant = { uid };
+      surAuth(courant);
+    },
+    async connecter(email, mdp) {
+      const c = comptes.get(email.trim().toLowerCase());
+      if (!c || c.mdp !== mdp) throw new ErreurJeu("E-mail ou mot de passe incorrect. (En mode démo, les comptes disparaissent quand la page se recharge.)");
+      courant = { uid: c.uid };
+      surAuth(courant);
+    },
+    async deconnecter() { courant = null; surAuth(null); },
+
+    async chargerPartie(uid) { return copie(etats.get(uid)) || null; },
+    async creerPersonnage(uid, etat, publicData) {
+      const cle = cleNom(etat.nom);
+      if (noms.has(cle)) throw new ErreurJeu("Ce nom est déjà pris. Choisis-en un autre.");
+      noms.add(cle);
+      etats.set(uid, copie(etat));
+      profils.set(uid, { ...copie(publicData), enLigne: true, vuLe: Date.now(), partenaire: null });
+      emettre();
+      demarrerAnimation(uid);
+    },
+    async sauvegarder(uid, etat, publicData) {
+      etats.set(uid, copie(etat));
+      Object.assign(profils.get(uid) || {}, copie(publicData));
+      emettre();
+    },
+    async presence(uid, enLigne) {
+      const p = profils.get(uid);
+      if (p) { p.enLigne = enLigne; p.vuLe = Date.now(); emettre(); }
+    },
+    async definirPartenaire(uid, partenaire) {
+      const p = profils.get(uid);
+      if (p) { p.partenaire = partenaire; emettre(); }
+    },
+    async profil(uid) { return profilDe(uid); },
+    suivreProfil(uid, cb) { return suivre(() => profilDe(uid), cb); },
+    suivreEnLigne(cb) {
+      return suivre(() => [...profils.keys()].map(profilDe).filter((p) => p.actif).sort((a, b) => b.score - a.score), cb);
+    },
+    async rechercher(texte) {
+      const cle = cleNom(texte);
+      return [...profils.keys()].map(profilDe).filter((p) => cleNom(p.nom).startsWith(cle)).slice(0, 20);
+    },
+    suivreClassement(cb) {
+      return suivre(() => [...profils.keys()].map(profilDe).sort((a, b) => b.score - a.score).slice(0, 50), cb);
+    },
+
+    suivreRelations(uid, cb) {
+      return suivre(() => [...relations.values()].filter((r) => r.membres.includes(uid)).map(copie), cb);
+    },
+    async demanderAmi(moi, autre) {
+      const id = idPaire(moi, autre);
+      if (relations.has(id)) throw new ErreurJeu("Vous êtes déjà en contact.");
+      relations.set(id, { id, ...nouvelleRelation(moi, autre) });
+      emettre();
+      reagirBot(id);
+    },
+    async modifierRelation(moi, autre, action, gain) {
+      const id = idPaire(moi, autre);
+      const r = relations.get(id) || null;
+      return relationModifiee(id, r, regleRelation(r && copie(r), action, moi, gain));
+    },
+    async encaisserRemboursement(moi, id) {
+      const r = relations.get(id);
+      if (!r) return false;
+      return relationModifiee(id, r, regleRelation(copie(r), "encaisser", moi));
+    },
+
+    suivreConversations(uid, cb) {
+      return suivre(() => [...conversations.values()].filter((c) => c.membres.includes(uid))
+        .sort((a, b) => b.majLe - a.majLe).map(copie), cb);
+    },
+    suivreMessages(moi, autre, cb) { return suivre(() => copie(messages.get(idPaire(moi, autre)) || []), cb); },
+    async envoyer(moi, autre, texte) {
+      ajouterMessage(moi, autre, texte);
+      emettre();
+      if (bots.has(autre)) plusTard(1300, () => ajouterMessage(autre, moi, auHasard(REPLIQUES)));
+    },
+    async marquerLu(moi, autre) {
+      const c = conversations.get(idPaire(moi, autre));
+      if (c && c.nonLus[moi]) { c.nonLus[moi] = 0; emettre(); }
+    },
+  };
+}
+
+/* ---------------- Firebase ---------------- */
+async function creerServeurFirebase(config) {
+  const V = "10.14.1";
+  const base = `https://www.gstatic.com/firebasejs/${V}/`;
+  const [{ initializeApp }, A, F] = await Promise.all([
+    import(base + "firebase-app.js"),
+    import(base + "firebase-auth.js"),
+    import(base + "firebase-firestore.js"),
+  ]);
+  const app = initializeApp(config);
+  const auth = A.getAuth(app);
+  const db = F.getFirestore(app);
+  const col = (nom) => F.collection(db, nom);
+  const ref = (nom, id) => F.doc(db, nom, id);
+  const ms = (t) => (t && typeof t.toMillis === "function" ? t.toMillis() : 0);
+  const lire = (d) => d.data({ serverTimestamps: "estimate" });
+  const profilDe = (d) => { const x = lire(d); return normaliserProfil(d.id, x, ms(x.vuLe)); };
+  const maintenant = () => F.serverTimestamp();
+
+  const erreurAuth = (e) => {
+    const messages = {
+      "auth/invalid-email": "Cette adresse e-mail n'est pas valide.",
+      "auth/email-already-in-use": "Un compte existe déjà avec cet e-mail. Connecte-toi.",
+      "auth/weak-password": "Mot de passe trop court : 6 caractères minimum.",
+      "auth/user-not-found": "E-mail ou mot de passe incorrect.",
+      "auth/wrong-password": "E-mail ou mot de passe incorrect.",
+      "auth/invalid-credential": "E-mail ou mot de passe incorrect.",
+      "auth/too-many-requests": "Trop de tentatives. Réessaie dans quelques minutes.",
+      "auth/network-request-failed": "Pas de connexion internet.",
+      "auth/operation-not-allowed": "La connexion par e-mail n'est pas activée dans Firebase (voir le guide, étape B2).",
+      "auth/unauthorized-domain": "Ce site n'est pas autorisé dans Firebase (voir le guide, étape B6).",
+    };
+    throw new ErreurJeu(messages[e.code] || `Connexion impossible (${e.code || e.message}).`);
+  };
+
+  const enSecours = (cb) => (e) => { console.error(e); cb(null, e); };
+
+  return {
+    demo: false,
+    surAuth(cb) { return A.onAuthStateChanged(auth, (u) => cb(u ? { uid: u.uid } : null)); },
+    inscrire: (email, mdp) => A.createUserWithEmailAndPassword(auth, email.trim(), mdp).then(() => {}, erreurAuth),
+    connecter: (email, mdp) => A.signInWithEmailAndPassword(auth, email.trim(), mdp).then(() => {}, erreurAuth),
+    deconnecter: () => A.signOut(auth),
+
+    async chargerPartie(uid) {
+      const d = await F.getDoc(ref("etats", uid));
+      return d.exists() ? d.data() : null;
+    },
+    async creerPersonnage(uid, etat, publicData) {
+      await F.runTransaction(db, async (tx) => {
+        const refNom = ref("noms", cleNom(etat.nom));
+        if ((await tx.get(refNom)).exists()) throw new ErreurJeu("Ce nom est déjà pris. Choisis-en un autre.");
+        tx.set(refNom, { uid });
+        tx.set(ref("etats", uid), etat);
+        tx.set(ref("players", uid), { ...publicData, enLigne: true, vuLe: maintenant(), partenaire: null, creeLe: maintenant() });
+      });
+    },
+    async sauvegarder(uid, etat, publicData) {
+      const b = F.writeBatch(db);
+      b.set(ref("etats", uid), etat);
+      b.set(ref("players", uid), publicData, { merge: true });
+      await b.commit();
+    },
+    presence: (uid, enLigne) => F.setDoc(ref("players", uid), { enLigne, vuLe: maintenant() }, { merge: true }),
+    definirPartenaire: (uid, partenaire) => F.updateDoc(ref("players", uid), { partenaire }),
+    async profil(uid) {
+      const d = await F.getDoc(ref("players", uid));
+      return d.exists() ? profilDe(d) : null;
+    },
+    suivreProfil(uid, cb) {
+      return F.onSnapshot(ref("players", uid), (d) => cb(d.exists() ? profilDe(d) : null), enSecours(cb));
+    },
+    suivreEnLigne(cb) {
+      const q = F.query(col("players"), F.orderBy("vuLe", "desc"), F.limit(60));
+      return F.onSnapshot(q, (s) => cb(s.docs.map(profilDe).filter((p) => p.actif)), enSecours(cb));
+    },
+    async rechercher(texte) {
+      const cle = cleNom(texte);
+      const q = F.query(col("players"), F.orderBy("nomMinuscule"), F.startAt(cle), F.endAt(cle + ""), F.limit(20));
+      return (await F.getDocs(q)).docs.map(profilDe);
+    },
+    suivreClassement(cb) {
+      const q = F.query(col("players"), F.orderBy("score", "desc"), F.limit(50));
+      return F.onSnapshot(q, (s) => cb(s.docs.map(profilDe)), enSecours(cb));
+    },
+
+    suivreRelations(uid, cb) {
+      const q = F.query(col("relations"), F.where("membres", "array-contains", uid));
+      return F.onSnapshot(q, (s) => cb(s.docs.map((d) => ({ id: d.id, ...lire(d) }))), enSecours(cb));
+    },
+    async demanderAmi(moi, autre) {
+      const r = ref("relations", idPaire(moi, autre));
+      await F.runTransaction(db, async (tx) => {
+        if ((await tx.get(r)).exists()) throw new ErreurJeu("Vous êtes déjà en contact.");
+        tx.set(r, { ...nouvelleRelation(moi, autre), majLe: maintenant() });
+      });
+    },
+    modifierRelation(moi, autre, action, gain) {
+      return this._transaction(idPaire(moi, autre), moi, action, gain);
+    },
+    encaisserRemboursement(moi, id) {
+      return this._transaction(id, moi, "encaisser", 0);
+    },
+    async _transaction(id, moi, action, gain) {
+      const r = ref("relations", id);
+      return F.runTransaction(db, async (tx) => {
+        const d = await tx.get(r);
+        const res = regleRelation(d.exists() ? d.data() : null, action, moi, gain);
+        if (res.supprimer) tx.delete(r);
+        else if (res.patch) {
+          const patch = {};
+          for (const [k, v] of Object.entries(res.patch)) patch[k] = v === SUPPRIMER_CHAMP ? F.deleteField() : v;
+          if (action !== "encaisser") patch.majLe = maintenant();
+          tx.update(r, patch);
+        }
+        return res.resultat;
+      });
+    },
+
+    suivreConversations(uid, cb) {
+      const q = F.query(col("conversations"), F.where("membres", "array-contains", uid), F.limit(50));
+      return F.onSnapshot(q, (s) => {
+        const liste = s.docs.map((d) => { const x = lire(d); return { id: d.id, ...x, majLe: ms(x.majLe) }; });
+        cb(liste.sort((a, b) => b.majLe - a.majLe));
+      }, enSecours(cb));
+    },
+    suivreMessages(moi, autre, cb) {
+      const q = F.query(F.collection(db, "conversations", idPaire(moi, autre), "messages"),
+        F.orderBy("envoyeLe", "desc"), F.limit(100));
+      return F.onSnapshot(q, (s) => cb(s.docs.map((d) => {
+        const x = lire(d);
+        return { id: d.id, auteur: x.auteur, texte: x.texte, envoyeLe: ms(x.envoyeLe) };
+      })), enSecours(cb));
+    },
+    async envoyer(moi, autre, texte) {
+      const id = idPaire(moi, autre);
+      const b = F.writeBatch(db);
+      b.set(ref("conversations", id), {
+        membres: [moi, autre].sort(),
+        dernierMessage: texte.length > 80 ? texte.slice(0, 80) + "…" : texte,
+        majLe: maintenant(),
+        nonLus: { [autre]: F.increment(1) },
+      }, { merge: true });
+      b.set(F.doc(F.collection(db, "conversations", id, "messages")), { auteur: moi, texte, envoyeLe: maintenant() });
+      await b.commit();
+    },
+    async marquerLu(moi, autre) {
+      try {
+        await F.updateDoc(ref("conversations", idPaire(moi, autre)), { [`nonLus.${moi}`]: 0 });
+      } catch (e) {
+        if (e.code !== "not-found") throw e;
+      }
+    },
+  };
+}
+
+/* =====================================================================
+   PARTIE 3 — L'APPLICATION
+   État → affichage → clics. Les écrans ne touchent jamais le serveur
+   directement : ils passent par les fonctions « Actions ».
+   ===================================================================== */
+
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const heure = (ms) => { if (!ms) return ""; const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+const S = {
+  serveur: null,
+  ecran: "chargement",        // chargement | auth | creation | naissance | jeu | erreur
+  erreurChargement: "",
+  uid: null,
+  etat: null,
+  auth: { mode: "inscription", email: "", mdp: "", erreur: "", envoi: false },
+  brouillon: { nom: "", genre: "femme", look: { peau: 3, coiffure: "afro", tenue: 0 } },
+  erreurCreation: "",
+  envoi: false,
+  onglet: "vie",
+  sousOnglet: "enligne",
+  relations: [],
+  relationsChargees: false,
+  enLigne: null,
+  classement: null,
+  conversations: [],
+  recherche: "",
+  resultats: null,
+  profils: new Map(),
+  profilOuvert: null,
+  confirmerRupture: false,
+  occupe: false,
+  chat: null,
+  messages: null,
+  bilan: null,
+};
+
+const abonnements = [];
+const abonnementsProfils = new Map();
+let minuteriePresence = null;
+let minuterieSauvegarde = null;
+let partenaireEcrit = "?";
+const remboursementsEnCours = new Set();
+
+/* ---------- Résumé social et score ---------- */
+function resume() {
+  const r = S.relations;
+  return {
+    amis: r.filter((x) => x.statut !== "demande_ami").length,
+    enCouple: r.some((x) => ["couple", "demande_dot", "marie"].includes(x.statut)),
+    marie: r.some((x) => x.statut === "marie"),
+  };
+}
+const scoreActuel = () => (S.etat ? Moteur.score(S.etat, resume()) : 0);
+const relationPartenaire = () => S.relations.find((x) => ["couple", "demande_dot", "marie"].includes(x.statut)) || null;
+const autreDe = (r) => r.membres.find((u) => u !== S.uid) || S.uid;
+const relationAvec = (uid) => S.relations.find((r) => r.id === idPaire(S.uid, uid)) || null;
+const demandesEnAttente = () => S.relations.filter((r) => attendReponse(r, S.uid)).length;
+const nonLus = () => S.conversations.reduce((s, c) => s + ((c.nonLus || {})[S.uid] || 0), 0);
+
+/** Profil d'un autre joueur, suivi en direct une fois demandé. */
+function profilDe(uid) {
+  if (!abonnementsProfils.has(uid) && S.serveur) {
+    abonnementsProfils.set(uid, S.serveur.suivreProfil(uid, (p) => {
+      if (p) S.profils.set(uid, p);
+      planifierRendu();
+    }));
+  }
+  return S.profils.get(uid) || null;
+}
+
+/* ---------- Démarrage et session ---------- */
+async function demarrer() {
+  const cfg = window.BABI_CONFIG || {};
+  const firebasePret = typeof cfg.apiKey === "string" && cfg.apiKey.length > 20 && !/COLLE|VOTRE|ICI/i.test(cfg.apiKey);
+  try {
+    S.serveur = firebasePret ? await creerServeurFirebase(cfg) : creerServeurDemo();
+  } catch (e) {
+    console.error(e);
+    S.ecran = "erreur";
+    S.erreurChargement = "Impossible de joindre Firebase. Vérifie ta connexion internet et le fichier config.js.";
+    rendre();
+    return;
+  }
+  S.serveur.surAuth(surUtilisateur);
+  enregistrerServiceWorker();
+}
+
+async function surUtilisateur(u) {
+  arreterJeu();
+  S.etat = null;
+  S.uid = u ? u.uid : null;
+  if (!u) { S.ecran = "auth"; rendre(); return; }
+  S.ecran = "chargement";
+  rendre();
+  try {
+    const etat = await S.serveur.chargerPartie(u.uid);
+    if (S.uid !== u.uid) return;
+    if (etat) { S.etat = etat; S.ecran = "jeu"; demarrerJeu(); }
+    else S.ecran = "creation";
+  } catch (e) {
+    console.error(e);
+    S.ecran = "erreur";
+    S.erreurChargement = "Impossible de charger ta partie. Vérifie ta connexion et réessaie.";
+  }
+  rendre();
+}
+
+function demarrerJeu() {
+  const srv = S.serveur, uid = S.uid;
+  S.relationsChargees = false;
+  abonnements.push(
+    srv.suivreRelations(uid, (liste) => liste && surRelations(liste)),
+    srv.suivreEnLigne((liste) => { S.enLigne = liste || []; planifierRendu(); }),
+    srv.suivreClassement((liste) => { S.classement = liste || []; planifierRendu(); }),
+    srv.suivreConversations(uid, (liste) => { S.conversations = liste || []; planifierRendu(); }),
+  );
+  signalerPresence(true);
+  minuteriePresence = setInterval(() => signalerPresence(true), 60000);
+}
+
+function arreterJeu() {
+  if (S.uid && S.etat) { sauvegarder(); signalerPresence(false); }
+  abonnements.splice(0).forEach((f) => f && f());
+  abonnementsProfils.forEach((f) => f && f());
+  abonnementsProfils.clear();
+  fermerChat();
+  clearInterval(minuteriePresence);
+  Object.assign(S, { relations: [], enLigne: null, classement: null, conversations: [], profils: new Map(), profilOuvert: null, bilan: null, resultats: null, recherche: "" });
+  partenaireEcrit = "?";
+}
+
+function signalerPresence(enLigne) {
+  if (!S.uid || !S.etat) return;
+  S.serveur.presence(S.uid, enLigne).catch(() => {});
+}
+document.addEventListener("visibilitychange", () => signalerPresence(document.visibilityState === "visible"));
+window.addEventListener("pagehide", () => { sauvegarder(); signalerPresence(false); });
+
+/* ---------- Sauvegarde ---------- */
+function planifierSauvegarde(immediat = false) {
+  clearTimeout(minuterieSauvegarde);
+  if (immediat) sauvegarder();
+  else minuterieSauvegarde = setTimeout(sauvegarder, 800);
+}
+function sauvegarder() {
+  clearTimeout(minuterieSauvegarde);
+  if (!S.uid || !S.etat || S.ecran === "creation") return;
+  S.serveur.sauvegarder(S.uid, S.etat, Moteur.profilPublic(S.etat, scoreActuel()))
+    .catch((e) => console.error("Sauvegarde échouée", e));
+}
+
+/* ---------- Relations reçues du serveur ---------- */
+async function surRelations(liste) {
+  const avant = new Map(S.relations.map((r) => [r.id, r.statut]));
+  S.relations = liste;
+  const j = S.etat;
+  if (j) {
+    // Dot refusée : la famille rend l'argent à celui qui l'avait payée (une seule fois).
+    for (const r of liste.filter((x) => x.rembourserDot === S.uid)) {
+      if (remboursementsEnCours.has(r.id)) continue;
+      remboursementsEnCours.add(r.id);
+      const rendu = await S.serveur.encaisserRemboursement(S.uid, r.id).catch(() => false);
+      if (rendu) {
+        j.argent += PRIX_DOT;
+        Moteur.noter(j, `Dot refusée : la famille te rend ${fcfa(PRIX_DOT)}.`);
+        toast(`Dot refusée. ${fcfa(PRIX_DOT)} te sont rendus.`);
+        planifierSauvegarde(true);
+      }
+      remboursementsEnCours.delete(r.id);
+    }
+    // Nouveaux couples et mariages (pas au premier chargement).
+    if (S.relationsChargees) {
+      for (const r of liste) {
+        const ancien = avant.get(r.id);
+        if (ancien === r.statut) continue;
+        const nom = profilDe(autreDe(r))?.nom || "ton partenaire";
+        if (r.statut === "marie") {
+          j.bonheur = borne(j.bonheur + 30);
+          j.rep = borne(j.rep + 15);
+          Moteur.noter(j, `Mariage avec ${nom} ! Les deux familles sont réunies.`);
+          toast("Mariage célébré ! 🎉");
+          planifierSauvegarde();
+        } else if (r.statut === "couple" && ancien === "demande_couple") {
+          j.bonheur = borne(j.bonheur + 15);
+          Moteur.noter(j, `Tu es en couple avec ${nom}.`);
+          toast(`${nom} et toi sortez ensemble ❤️`);
+          planifierSauvegarde();
+        } else if (r.statut === "ami" && ancien === "demande_ami") {
+          Moteur.noter(j, `${nom} et toi êtes maintenant ami·e·s.`);
+        } else if (r.statut === "demande_ami" && !ancien && r.demandeur !== S.uid) {
+          toast(`${nom} veut devenir ton ami·e`);
+        }
+      }
+    }
+    // Le profil public dit avec qui on est en couple, pour que les autres le voient.
+    const p = relationPartenaire();
+    const partenaire = p ? autreDe(p) : null;
+    if (partenaire !== partenaireEcrit) {
+      partenaireEcrit = partenaire;
+      S.serveur.definirPartenaire(S.uid, partenaire).catch(() => {});
+    }
+    if (Moteur.verifierSucces(j, resume()).length) planifierSauvegarde();
+  }
+  S.relationsChargees = true;
+  liste.forEach((r) => profilDe(autreDe(r)));
+  planifierRendu();
+}
+
+/* ---------- Actions ---------- */
+const Actions = {
+  async validerAuth() {
+    const a = S.auth;
+    const email = a.email.trim();
+    a.erreur = !email.includes("@") ? "Entre une adresse e-mail valide."
+      : a.mdp.length < 6 ? "Le mot de passe doit faire au moins 6 caractères." : "";
+    if (a.erreur) return rendre();
+    a.envoi = true; rendre();
+    try {
+      if (a.mode === "inscription") await S.serveur.inscrire(email, a.mdp);
+      else await S.serveur.connecter(email, a.mdp);
+      a.mdp = "";
+    } catch (e) {
+      a.erreur = e instanceof ErreurJeu ? e.message : "Connexion impossible. Réessaie.";
+    }
+    a.envoi = false;
+    rendre();
+  },
+
+  async naitre() {
+    const nom = S.brouillon.nom.trim();
+    S.erreurCreation = nom.length < 2 || nom.length > 20 ? "Le nom doit faire entre 2 et 20 caractères."
+      : !/^[\p{L}0-9 _'.-]+$/u.test(nom) ? "Utilise seulement des lettres, chiffres, espaces, _ ou -." : "";
+    if (S.erreurCreation) return rendre();
+    S.envoi = true; rendre();
+    const etat = Moteur.naitre({ nom, genre: S.brouillon.genre, look: { ...S.brouillon.look } });
+    try {
+      await S.serveur.creerPersonnage(S.uid, etat, Moteur.profilPublic(etat, Moteur.score(etat, resume())));
+      S.etat = etat;
+      S.ecran = "naissance";
+      demarrerJeu();
+    } catch (e) {
+      console.error(e);
+      S.erreurCreation = e instanceof ErreurJeu ? e.message : "Création impossible. Vérifie ta connexion et réessaie.";
+    }
+    S.envoi = false;
+    rendre();
+    window.scrollTo(0, 0);
+  },
+
+  jouer(fn) {
+    const j = S.etat;
+    const r = fn(j);
+    const nouveaux = Moteur.verifierSucces(j, resume());
+    planifierSauvegarde();
+    toast(nouveaux.length ? `Succès débloqué : ${nouveaux[0].nom} 🏆` : r.message);
+    rendre();
+  },
+
+  moisSuivant() {
+    const j = S.etat;
+    const lignes = Moteur.moisSuivant(j, resume());
+    Moteur.verifierSucces(j, resume()).forEach((s) => lignes.push({ texte: `Succès débloqué : ${s.nom}` }));
+    S.bilan = lignes;
+    planifierSauvegarde(true);
+    rendre();
+  },
+
+  /** Enveloppe commune des actions avec un autre joueur. */
+  async social(fn) {
+    if (S.occupe) return;
+    S.occupe = true; rendre();
+    try {
+      const message = await fn();
+      if (message) toast(message);
+    } catch (e) {
+      console.error(e);
+      toast(e instanceof ErreurJeu ? e.message : "Action impossible. Vérifie ta connexion et réessaie.");
+    }
+    S.occupe = false;
+    rendre();
+  },
+
+  demanderAmi: (autre) => Actions.social(async () => {
+    await S.serveur.demanderAmi(S.uid, autre);
+    return "Demande d'amitié envoyée.";
+  }),
+
+  interagir: (autre, id) => Actions.social(async () => {
+    const i = INTERACTIONS.find((x) => x.id === id);
+    const j = S.etat;
+    const p = Moteur.payer(j, i);
+    if (!p.ok) return p.message;
+    try {
+      const affinite = await S.serveur.modifierRelation(S.uid, autre, "affinite", i.gain);
+      if (i.prix > 0) j.bonheur = borne(j.bonheur + 4);
+      planifierSauvegarde();
+      return `${i.label} ✓ · affinité ${affinite}`;
+    } catch (e) {
+      Moteur.rembourser(j, i);
+      throw e;
+    }
+  }),
+
+  proposerCouple: (autre) => Actions.social(async () => {
+    if (relationPartenaire()) return "Tu es déjà en couple.";
+    const p = await S.serveur.profil(autre);
+    if (p?.partenaire && p.partenaire !== S.uid) return "Cette personne est déjà prise.";
+    await S.serveur.modifierRelation(S.uid, autre, "couple");
+    return "Demande envoyée. Croise les doigts !";
+  }),
+
+  proposerDot: (autre) => Actions.social(async () => {
+    const j = S.etat;
+    const p = Moteur.payer(j, { prix: PRIX_DOT });
+    if (!p.ok) return p.message;
+    try {
+      await S.serveur.modifierRelation(S.uid, autre, "dot");
+    } catch (e) {
+      Moteur.rembourser(j, { prix: PRIX_DOT });
+      throw e;
+    }
+    Moteur.noter(j, "Dot apportée à la famille. En attente de la réponse.");
+    planifierSauvegarde(true);
+    return "Dot apportée ! En attente de la réponse.";
+  }),
+
+  accepter: (autre) => Actions.social(async () => {
+    const r = relationAvec(autre);
+    const partenaire = relationPartenaire();
+    if (r?.statut === "demande_couple" && partenaire && partenaire.id !== r.id) return "Tu es déjà en couple.";
+    const statut = await S.serveur.modifierRelation(S.uid, autre, "accepter");
+    return { ami: "Vous êtes maintenant ami·e·s.", couple: "Vous sortez ensemble !", marie: "Dot acceptée. Félicitations aux mariés !" }[statut] || "Accepté.";
+  }),
+
+  refuser: (autre) => Actions.social(async () => {
+    await S.serveur.modifierRelation(S.uid, autre, "refuser");
+    return "Demande refusée.";
+  }),
+
+  rompre: (autre) => Actions.social(async () => {
+    S.confirmerRupture = false;
+    await S.serveur.modifierRelation(S.uid, autre, "rompre");
+    return "Relation terminée.";
+  }),
+
+  async envoyerMessage() {
+    const champ = $("#saisie");
+    const texte = champ.value.trim();
+    if (!texte || !S.chat) return;
+    if (texte.length > 500) return toast("Message trop long (500 caractères maximum).");
+    champ.value = "";
+    try {
+      await S.serveur.envoyer(S.uid, S.chat, texte);
+    } catch (e) {
+      console.error(e);
+      champ.value = texte;
+      toast("Message non envoyé. Vérifie ta connexion.");
+    }
+    champ.focus();
+  },
+};
+
+/* ---------- Chat ---------- */
+let desabonnerMessages = null;
+function ouvrirChat(uid) {
+  fermerChat();
+  S.chat = uid;
+  S.messages = null;
+  profilDe(uid);
+  desabonnerMessages = S.serveur.suivreMessages(S.uid, uid, (liste) => {
+    S.messages = liste || [];
+    if (S.messages[0] && S.messages[0].auteur !== S.uid) S.serveur.marquerLu(S.uid, uid).catch(() => {});
+    rendreFil();
+  });
+  S.serveur.marquerLu(S.uid, uid).catch(() => {});
+  rendreChat();
+  setTimeout(() => $("#saisie")?.focus(), 50);
+}
+function fermerChat() {
+  if (desabonnerMessages) desabonnerMessages();
+  desabonnerMessages = null;
+  S.chat = null;
+  S.messages = null;
+  const racine = $("#chat-racine");
+  if (racine) racine.innerHTML = "";
+}
+
+/* =====================================================================
+   AFFICHAGE
+   ===================================================================== */
+
+function avatar(look, taille = 48, enLigne = false) {
+  look = look || {};
+  const peau = PEAUX[look.peau] || PEAUX[3];
+  const tenue = TENUES[look.tenue] || TENUES[0];
+  const ch = "#1b120c";
+  const calotte = `<path d="M33 64 Q33 36 60 36 Q87 36 87 64 Q80 46 60 46 Q40 46 33 64Z" fill="${ch}"/>`;
+  let derriere = "", dessus = "";
+  switch (look.coiffure) {
+    case "tresses":
+      derriere = [30, 38, 46, 74, 82, 90].map((x) => `<line x1="${x}" y1="52" x2="${x}" y2="122" stroke="${ch}" stroke-width="6" stroke-linecap="round"/>`).join("");
+      dessus = calotte; break;
+    case "ras":
+      dessus = `<path d="M35 60 Q35 38 60 38 Q85 38 85 60 Q78 48 60 48 Q42 48 35 60Z" fill="${ch}"/>`; break;
+    case "chignon":
+      derriere = `<circle cx="60" cy="28" r="15" fill="${ch}"/>`; dessus = calotte; break;
+    case "foulard":
+      dessus = `<path d="M30 62 Q28 24 60 24 Q92 24 90 62 Q80 44 60 44 Q40 44 30 62Z" fill="${tenue}"/><path d="M60 24 Q78 10 88 26 Q74 26 66 34Z" fill="${tenue}"/>`; break;
+    default:
+      derriere = `<circle cx="60" cy="56" r="36" fill="${ch}"/>`;
+  }
+  return `<span class="ava" style="width:${taille}px;height:${taille}px"><svg viewBox="0 15 120 120" aria-hidden="true">
+    ${derriere}
+    <path d="M18 150 Q18 108 60 106 Q102 108 102 150Z" fill="${tenue}"/>
+    <rect x="50" y="86" width="20" height="24" rx="6" fill="${peau}"/>
+    <ellipse cx="60" cy="66" rx="26" ry="30" fill="${peau}"/>
+    ${dessus}
+    <circle cx="50" cy="68" r="3" fill="#140c07"/><circle cx="70" cy="68" r="3" fill="#140c07"/>
+    <path d="M51 80 Q60 87 69 80" stroke="#140c07" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </svg>${enLigne ? '<i class="pt" title="En ligne"></i>' : ""}</span>`;
+}
+
+const barre = (label, val, classe = "") =>
+  `<div class="stat"><small><span>${label}</span><span>${val}</span></small><div class="barre"><i class="${classe}${val < 25 && !classe ? " bas" : ""}" style="width:${val}%"></i></div></div>`;
+
+const tuile = ({ attrs, titre, detail, cout, actif = true }) =>
+  `<button class="action" ${attrs} ${actif && !S.occupe ? "" : "disabled"}><span><strong>${titre}</strong><span>${detail}</span></span><span class="cout">${cout}</span></button>`;
+
+const marque = () => `<h1 class="titre">La Vie <span class="babi">à Babi</span></h1>
+  <div class="drapeau" aria-hidden="true"><span></span><span></span><span></span></div>`;
+
+const bandeauDemo = () => S.serveur?.demo
+  ? `<div class="bandeau-demo"><strong>Mode démo.</strong> Les autres joueurs sont simulés et rien n'est enregistré. Le vrai multijoueur s'active quand Firebase est configuré.</div>` : "";
+
+/* ---------- Écrans ---------- */
+function vueAuth() {
+  const a = S.auth;
+  const inscr = a.mode === "inscription";
+  return `${marque()}
+  <p class="accroche">Personne ne choisit où il naît : tu peux naître à Abobo ou à Cocody. Trouve un travail, fais-toi des amis, sors au maquis, trouve l'amour et fais ta dot, avec de vrais joueurs.</p>
+  ${bandeauDemo()}
+  <div class="segment" role="group" aria-label="Compte">
+    <button type="button" data-action="mode-auth" data-valeur="inscription" aria-pressed="${inscr}">Créer un compte</button>
+    <button type="button" data-action="mode-auth" data-valeur="connexion" aria-pressed="${!inscr}">Se connecter</button>
+  </div>
+  <form id="form-auth" novalidate>
+    <label class="label" for="email">E-mail</label>
+    <input class="champ" id="email" type="email" autocomplete="email" inputmode="email" placeholder="ton@email.com" data-champ="auth.email" value="${esc(a.email)}">
+    <label class="label" for="mdp">Mot de passe</label>
+    <input class="champ" id="mdp" type="password" autocomplete="${inscr ? "new-password" : "current-password"}" placeholder="minimum 6 caractères" data-champ="auth.mdp" value="${esc(a.mdp)}">
+    <p class="erreur" role="alert">${esc(a.erreur)}</p>
+    <button class="btn" type="submit" ${a.envoi ? "disabled" : ""}>${a.envoi ? "Un instant…" : inscr ? "Créer mon compte" : "Me connecter"}</button>
+  </form>`;
+}
+
+function vueCreation() {
+  const b = S.brouillon;
+  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:6px">
+      <h2 class="section-titre" style="margin:0">Crée ton personnage</h2>
+      <button class="lien" data-action="deconnexion">Déconnexion</button>
+    </div>
+  <p class="note">Ton quartier de naissance sera tiré au hasard. Ton nom est visible par les autres joueurs.</p>
+  <label class="label" for="nom">Nom du personnage</label>
+  <input class="champ" id="nom" maxlength="20" autocomplete="off" placeholder="ex. : Aya_Yop" data-champ="brouillon.nom" value="${esc(b.nom)}">
+  <span class="label">Tu es</span>
+  <div class="segment" role="group" aria-label="Genre">
+    <button data-action="genre" data-valeur="femme" aria-pressed="${b.genre === "femme"}">Une femme</button>
+    <button data-action="genre" data-valeur="homme" aria-pressed="${b.genre === "homme"}">Un homme</button>
+  </div>
+  <span class="label">Ton look</span>
+  <div class="look">
+    <div>${avatar(b.look, 130)}</div>
+    <div class="options">
+      <span class="sous">Peau</span>
+      <div class="pastilles">${PEAUX.map((c, i) => `<button class="pastille" style="background:${c}" data-action="look" data-cle="peau" data-valeur="${i}" aria-pressed="${b.look.peau === i}" aria-label="Teinte ${i + 1}"></button>`).join("")}</div>
+      <span class="sous">Coiffure</span>
+      <div class="choix">${COIFFURES.map((c) => `<button class="puce" data-action="look" data-cle="coiffure" data-valeur="${c.id}" aria-pressed="${b.look.coiffure === c.id}">${c.nom}</button>`).join("")}</div>
+      <span class="sous">Tenue</span>
+      <div class="pastilles">${TENUES.map((c, i) => `<button class="pastille" style="background:${c}" data-action="look" data-cle="tenue" data-valeur="${i}" aria-pressed="${b.look.tenue === i}" aria-label="Couleur ${i + 1}"></button>`).join("")}</div>
+    </div>
+  </div>
+  <p class="erreur" role="alert">${esc(S.erreurCreation)}</p>
+  <button class="btn" data-action="naitre" ${S.envoi ? "disabled" : ""}>${S.envoi ? "Un instant…" : "Naître à Babi"}</button>`;
+}
+
+function vueNaissance() {
+  const j = S.etat;
+  const q = quartierDe(j.quartier);
+  const phrase = { chic: "La vie commence avec un bon coussin. À toi de ne pas tout gaspiller.", moyen: "Ni trop, ni trop peu. Tout reste possible avec du travail.", populaire: "Ici, on se débrouille. Chaque franc compte, chaque relation aussi." }[q.type];
+  return `<div class="naissance">
+    <span class="eyebrow">${TYPE_QUARTIER[q.type].label}</span>
+    <h2>${esc(j.nom)}, tu es ${accord(j.genre, "né", "née")} à <em>${q.nom}</em>.</h2>
+    <p class="accroche">${phrase}</p>
+    <div class="carte" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:end">
+      ${avatar(j.look, 104)}
+      <div class="grille2">
+        <div class="case"><small>Argent</small><strong>${fcfa(j.argent)}</strong></div>
+        <div class="case"><small>Diplôme</small><strong>${DIPLOMES[j.diplome].nom}</strong></div>
+        <div class="case"><small>Loyer</small><strong>${fcfa(q.loyer)}</strong></div>
+        <div class="case"><small>Réputation</small><strong>${j.rep}</strong></div>
+      </div>
+    </div>
+    <div style="margin-top:24px"><button class="btn" data-action="commencer">Commencer ma vie</button></div>
+  </div>`;
+}
+
+function vueJeu() {
+  const j = S.etat;
+  const q = quartierDe(j.quartier);
+  const badgeJoueurs = demandesEnAttente() + nonLus();
+  const onglets = [["vie", "Vie"], ["boulot", "Boulot"], ["joueurs", "Joueurs"], ["maison", "Maison"], ["perf", "Perf"]];
+  const corps = { vie: ongletVie, boulot: ongletBoulot, joueurs: ongletJoueurs, maison: ongletMaison, perf: ongletPerf }[S.onglet]();
+  return `${bandeauDemo()}
+  <header class="entete">
+    ${avatar(j.look, 60)}
+    <div style="min-width:0">
+      <h1>${esc(j.nom)}</h1>
+      <div class="meta">${Math.floor(j.ageMois / 12)} ans · ${q.nom} · ${esc(metierDe(j.metier)?.nom || "Sans emploi")}</div>
+    </div>
+    <button class="icone-btn" data-action="deconnexion" aria-label="Se déconnecter">Sortir</button>
+  </header>
+  <div class="argent ${j.argent < 0 ? "negatif" : ""}">${fcfa(j.argent)}</div>
+  <div class="stats">${barre("Santé", j.sante)}${barre("Bonheur", j.bonheur)}${barre("Réputation", j.rep)}${barre("Énergie", j.energie, "orange")}</div>
+  <main>${corps}</main>
+  <nav class="bas-fixe" aria-label="Navigation du jeu">
+    <div class="interieur">
+      <button class="btn btn-mois" data-action="mois"><span>Mois suivant</span><small>Loyer ${fcfa(q.loyer)}</small></button>
+      <div class="onglets" role="tablist">
+        ${onglets.map(([id, nom]) => `<button role="tab" data-action="onglet" data-valeur="${id}" aria-selected="${S.onglet === id}">${nom}${id === "joueurs" && badgeJoueurs ? `<span class="pastille-nb">${badgeJoueurs}</span>` : ""}</button>`).join("")}
+      </div>
+    </div>
+  </nav>`;
+}
+
+/* ---------- Onglets ---------- */
+function ongletVie() {
+  const j = S.etat;
+  return `<h2 class="section-titre">Que fais-tu ce mois-ci ?</h2>
+  <div class="liste">${ACTIVITES.map((a) => tuile({
+    attrs: `data-action="activite" data-valeur="${a.id}"`, titre: a.nom,
+    detail: `${a.detail} · −${a.energie} énergie`, cout: a.prix ? fcfa(a.prix) : "Gratuit",
+    actif: j.energie >= a.energie && j.argent >= a.prix,
+  })).join("")}</div>`;
+}
+
+function ongletBoulot() {
+  const j = S.etat;
+  const m = metierDe(j.metier);
+  const poste = m ? `<div class="carte">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>${m.nom}</strong><span class="etiquette vert">${fcfa(m.salaire)} / mois</span></div>
+      <p class="note" style="margin:6px 0 12px">Deux journées par mois, payées chacune la moitié du salaire. Faites ce mois : ${j.travailCeMois} / 2</p>
+      <div class="liste">
+        ${tuile({ attrs: 'data-action="travailler"', titre: "Aller au travail", detail: `−${m.energie} énergie`, cout: "+" + fcfa(m.salaire / 2), actif: j.travailCeMois < 2 && j.energie >= m.energie })}
+        <button class="btn secondaire" data-action="demissionner">Démissionner</button>
+      </div></div>` : `<div class="vide">Tu n'as pas encore de travail. Postule à une offre ci-dessous.</div>`;
+  const suivant = j.diplome + 1;
+  const etudes = j.etude ? `<div class="carte">
+      <strong>Formation : ${DIPLOMES[j.etude.niveau].nom}</strong>
+      <div class="barre" style="margin:10px 0"><i class="orange" style="width:${j.etude.progres}%"></i></div>
+      <p class="note" style="margin:0 0 12px">Progression : ${j.etude.progres} %</p>
+      ${tuile({ attrs: 'data-action="etudier"', titre: "Réviser", detail: "−35 énergie", cout: "Gratuit", actif: j.energie >= 35 })}</div>`
+    : suivant < DIPLOMES.length
+      ? tuile({ attrs: 'data-action="inscrire"', titre: `Préparer le ${DIPLOMES[suivant].nom}`, detail: "Frais d'inscription payés une fois", cout: fcfa(DIPLOMES[suivant].frais), actif: j.argent >= DIPLOMES[suivant].frais })
+      : `<div class="vide">Tu as le plus haut diplôme. Bravo !</div>`;
+  const offres = METIERS.filter((x) => x.id !== j.metier).map((x) => {
+    const okD = j.diplome >= x.diplome, okR = j.rep >= x.rep;
+    const manque = [!okD ? DIPLOMES[x.diplome].nom : "", !okR ? `réputation ${x.rep}` : ""].filter(Boolean).join(" et ");
+    return tuile({ attrs: `data-action="postuler" data-valeur="${x.id}"`, titre: x.nom, detail: okD && okR ? "Tu remplis les conditions · −10 énergie" : `Il faut : ${manque}`, cout: fcfa(x.salaire), actif: okD && okR && j.energie >= 10 });
+  }).join("");
+  return `<h2 class="section-titre">Ton poste</h2>${poste}
+  <h2 class="section-titre">Études · ${DIPLOMES[j.diplome].nom}</h2>${etudes}
+  <h2 class="section-titre">Offres d'emploi</h2><div class="liste">${offres}</div>`;
+}
+
+function ligneJoueur(p, { sous, fin = "", action = "profil", classe = "" } = {}) {
+  return `<button class="joueur ${classe}" data-action="${action}" data-valeur="${esc(p.uid)}">
+    ${avatar(p.look, 46, p.actif)}
+    <span style="min-width:0"><span class="nom">${esc(p.nom)}</span><span class="sous">${esc(sous ?? `${p.ageAns} ans · ${quartierDe(p.quartier).nom} · ${p.metier}`)}</span></span>
+    ${fin}
+  </button>`;
+}
+
+function ongletJoueurs() {
+  const dem = demandesEnAttente(), nl = nonLus();
+  const sous = [["enligne", "En ligne", 0], ["messages", "Messages", nl], ["relations", "Relations", dem], ["classement", "Classement", 0]];
+  const corps = { enligne: listeEnLigne, messages: listeMessages, relations: listeRelations, classement: listeClassement }[S.sousOnglet]();
+  return `<div class="sous-onglets" role="tablist">${sous.map(([id, nom, n]) => `<button role="tab" data-action="sous-onglet" data-valeur="${id}" aria-selected="${S.sousOnglet === id}">${nom}${n ? `<span class="pastille-nb">${n}</span>` : ""}</button>`).join("")}</div>${corps}`;
+}
+
+function listeEnLigne() {
+  const champ = `<input class="champ" id="recherche" type="search" autocomplete="off" placeholder="Chercher un joueur par son nom" data-champ="recherche" value="${esc(S.recherche)}" style="margin:8px 0 12px">`;
+  if (S.resultats) {
+    const r = S.resultats.filter((p) => p.uid !== S.uid);
+    return champ + (r.length ? `<div class="liste">${r.map((p) => ligneJoueur(p)).join("")}</div>` : `<div class="vide">Aucun joueur trouvé avec ce nom.</div>`);
+  }
+  if (!S.enLigne) return champ + `<p class="chargement">Chargement des joueurs…</p>`;
+  const liste = S.enLigne.filter((p) => p.uid !== S.uid);
+  return champ + `<h2 class="section-titre" style="margin-top:4px">${liste.length} joueur${liste.length > 1 ? "s" : ""} en ligne</h2>`
+    + (liste.length ? `<div class="liste">${liste.map((p) => ligneJoueur(p)).join("")}</div>`
+      : `<div class="vide">Personne d'autre en ligne pour l'instant. Partage le lien du jeu à tes amis !</div>`);
+}
+
+function listeMessages() {
+  if (!S.conversations.length) return `<div class="vide" style="margin-top:8px">Aucune conversation. Ouvre le profil d'un joueur pour lui écrire.</div>`;
+  return `<div class="liste" style="margin-top:8px">${S.conversations.map((c) => {
+    const autre = c.membres.find((u) => u !== S.uid);
+    const p = profilDe(autre);
+    if (!p) return `<p class="chargement">Chargement…</p>`;
+    const n = (c.nonLus || {})[S.uid] || 0;
+    return ligneJoueur(p, { sous: c.dernierMessage, action: "chat", fin: n ? `<span class="pastille-nb">${n}</span>` : `<span class="meta">${heure(c.majLe)}</span>` });
+  }).join("")}</div>`;
+}
+
+function listeRelations() {
+  const liste = [...S.relations].sort((a, b) => (attendReponse(b, S.uid) - attendReponse(a, S.uid)) || b.affinite - a.affinite);
+  if (!liste.length) return `<div class="vide" style="margin-top:8px">Pas encore de relations. Va dans « En ligne » et demande quelqu'un en ami·e.</div>`;
+  return `<div class="liste" style="margin-top:8px">${liste.map((r) => {
+    const p = profilDe(autreDe(r));
+    if (!p) return `<p class="chargement">Chargement…</p>`;
+    const aMoi = attendReponse(r, S.uid);
+    const sous = aMoi ? `${STATUTS[r.statut]} · à toi de répondre` : r.statut.startsWith("demande_") ? `${STATUTS[r.statut]} · en attente` : `${STATUTS[r.statut]} · affinité ${r.affinite}`;
+    return ligneJoueur(p, { sous, fin: aMoi ? `<span class="etiquette orange">Nouveau</span>` : "" });
+  }).join("")}</div>`;
+}
+
+function listeClassement() {
+  if (!S.classement) return `<p class="chargement">Chargement du classement…</p>`;
+  if (!S.classement.length) return `<div class="vide" style="margin-top:8px">Le classement est vide pour l'instant.</div>`;
+  return `<div class="liste" style="margin-top:8px">${S.classement.map((p, i) => `<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px;align-items:center">
+    <span class="rang-num ${i < 3 ? "top" : ""}">${i + 1}</span>
+    ${ligneJoueur(p, { sous: `${quartierDe(p.quartier).nom} · ${p.metier}`, fin: `<strong>${p.score}</strong>`, classe: p.uid === S.uid ? "moi" : "" })}
+  </div>`).join("")}</div>`;
+}
+
+function ongletMaison() {
+  const j = S.etat;
+  const q = quartierDe(j.quartier);
+  return `<h2 class="section-titre">Chez toi à ${q.nom}</h2>
+  <p class="note" style="margin:-4px 0 10px">Avec 3 objets ou plus, ton bonheur baisse moins chaque mois.</p>
+  <div class="liste">${MEUBLES.map((m) => {
+    const a = j.maison.includes(m.id);
+    return tuile({ attrs: `data-action="acheter" data-valeur="${m.id}"`, titre: m.nom, detail: a ? "Déjà chez toi" : `+${m.bonheur} bonheur`, cout: a ? "✓" : fcfa(m.prix), actif: !a && j.argent >= m.prix });
+  }).join("")}</div>
+  <h2 class="section-titre">Boutique</h2>
+  <div class="carte boutique">
+    <div><strong>Tenues exclusives et statut VIP</strong><p class="note" style="margin:2px 0 0">Bientôt disponible.</p></div>
+    <span class="etiquette orange">Bientôt</span>
+  </div>
+  <h2 class="section-titre">Déménager</h2>
+  <div class="liste">${QUARTIERS.filter((x) => x.id !== j.quartier).map((x) => tuile({
+    attrs: `data-action="demenager" data-valeur="${x.id}"`, titre: x.nom, detail: `${TYPE_QUARTIER[x.type].label} · loyer ${fcfa(x.loyer)}`,
+    cout: "Caution " + fcfa(x.loyer * 3), actif: j.argent >= x.loyer * 3,
+  })).join("")}</div>`;
+}
+
+/* Courbe de l'argent : mêmes dimensions pour le dessin et le survol. */
+const G = { L: 320, H: 150, g: 44, d: 8, h: 10, b: 22 };
+function echelleCourbe(histo) {
+  const vals = histo.map((p) => p.argent);
+  const min = Math.min(0, ...vals);
+  let max = Math.max(...vals);
+  if (max === min) max = min + 1;
+  return {
+    min, max,
+    x: (i) => G.g + (i / (histo.length - 1)) * (G.L - G.g - G.d),
+    y: (v) => G.h + (1 - (v - min) / (max - min)) * (G.H - G.h - G.b),
+  };
+}
+function courbe(histo) {
+  if (histo.length < 2) return `<div class="vide">Ta courbe d'argent apparaît après ton premier mois.</div>`;
+  const { min, max, x, y } = echelleCourbe(histo);
+  const court = (v) => Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1).replace(".", ",") + " M" : Math.abs(v) >= 1000 ? Math.round(v / 1000) + " k" : String(Math.round(v));
+  const pts = histo.map((p, i) => `${x(i).toFixed(1)},${y(p.argent).toFixed(1)}`).join(" ");
+  const base = y(Math.max(min, 0));
+  const dernier = histo[histo.length - 1];
+  return `<div class="graphe" id="graphe">
+    <svg viewBox="0 0 ${G.L} ${G.H}" role="img" aria-label="Évolution de ton argent sur ${histo.length} mois">
+      ${[min, (min + max) / 2, max].map((v) => `<line x1="${G.g}" x2="${G.L - G.d}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+        <text x="${G.g - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${court(v)}</text>`).join("")}
+      ${min < 0 ? `<line x1="${G.g}" x2="${G.L - G.d}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="3 3"/>` : ""}
+      <polygon points="${x(0)},${base} ${pts} ${x(histo.length - 1)},${base}" fill="var(--orange)" fill-opacity=".14"/>
+      <polyline points="${pts}" fill="none" stroke="var(--orange)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${x(histo.length - 1)}" cy="${y(dernier.argent)}" r="4" fill="var(--orange)" stroke="var(--surface)" stroke-width="2"/>
+      <text x="${G.g}" y="${G.H - 4}" font-size="10" fill="var(--muted)">Mois ${histo[0].mois}</text>
+      <text x="${G.L - G.d}" y="${G.H - 4}" font-size="10" fill="var(--muted)" text-anchor="end">Mois ${dernier.mois}</text>
+      <line id="curseur" y1="${G.h}" y2="${G.H - G.b}" stroke="var(--muted)" visibility="hidden"/>
+      <circle id="point-curseur" r="4" fill="var(--orange)" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+    </svg>
+    <div class="bulle-graphe" id="bulle" hidden></div>
+  </div>`;
+}
+
+function ongletPerf() {
+  const j = S.etat;
+  const score = scoreActuel();
+  const { rang, suivant } = Moteur.rang(score);
+  const position = S.classement ? S.classement.findIndex((p) => p.uid === S.uid) : -1;
+  return `<h2 class="section-titre">Ta performance</h2>
+  <div class="carte">
+    <div class="score">
+      <div class="valeur">${score}</div>
+      <div><div class="rang">${rang.nom}</div><div class="meta">${suivant ? `Encore ${suivant.min - score} points pour « ${suivant.nom} »` : "Rang maximum atteint"}</div></div>
+    </div>
+    <div class="chiffres">
+      <div class="case"><small>Classement</small><strong>${position >= 0 ? `${position + 1}ᵉ` : "—"}</strong></div>
+      <div class="case"><small>Total gagné</small><strong>${fcfa(j.stats.gagne)}</strong></div>
+      <div class="case"><small>Ami·e·s</small><strong>${resume().amis}</strong></div>
+    </div>
+  </div>
+  <h2 class="section-titre">Ton argent mois après mois</h2>
+  ${courbe(j.stats.histo)}
+  <h2 class="section-titre">Succès · ${j.stats.succes.length} / ${SUCCES.length}</h2>
+  <div class="succes">${SUCCES.map((s) => {
+    const o = j.stats.succes.includes(s.id);
+    return `<div class="badge ${o ? "obtenu" : ""}"><strong>${o ? "✓ " : ""}${s.nom}</strong><span>${s.detail}</span></div>`;
+  }).join("")}</div>
+  <h2 class="section-titre">Ton journal</h2>
+  <div class="journal">${j.journal.map((e) => `<div><small>${esc(e.quand)}</small>${esc(e.texte)}</div>`).join("")}</div>`;
+}
+
+/* ---------- Feuilles : profil d'un joueur et bilan ---------- */
+function vueProfil() {
+  const uid = S.profilOuvert;
+  const p = profilDe(uid);
+  if (!p) return `<div class="voile" data-action="fermer-feuille"><div class="feuille" data-stop><p class="chargement">Chargement du profil…</p></div></div>`;
+  const j = S.etat;
+  const r = relationAvec(uid);
+  const prenom = esc(p.nom.split(" ")[0]);
+  const pris = p.partenaire && p.partenaire !== S.uid;
+  const monPartenaire = relationPartenaire();
+  let actions = "";
+
+  if (!r) {
+    actions += tuile({ attrs: `data-action="ami" data-valeur="${esc(uid)}"`, titre: "Demander en ami·e", detail: "Il ou elle devra accepter", cout: "Gratuit" });
+  } else if (attendReponse(r, S.uid)) {
+    const question = { demande_ami: `${prenom} veut devenir ton ami·e.`, demande_couple: `${prenom} te propose de sortir ensemble.`, demande_dot: `${prenom} a apporté la dot à ta famille. Acceptes-tu le mariage ?` }[r.statut];
+    actions += `<div class="question"><p>${question}</p><div class="deux">
+      <button class="btn secondaire" data-action="refuser" data-valeur="${esc(uid)}" ${S.occupe ? "disabled" : ""}>Refuser</button>
+      <button class="btn" data-action="accepter" data-valeur="${esc(uid)}" ${S.occupe ? "disabled" : ""}>Accepter</button></div></div>`;
+  } else if (r.statut.startsWith("demande_")) {
+    actions += `<div class="vide">${STATUTS[r.statut]} envoyée. En attente de la réponse de ${prenom}.</div>`;
+  }
+
+  if (r && r.statut !== "demande_ami") {
+    actions += INTERACTIONS.map((i) => tuile({
+      attrs: `data-action="interagir" data-valeur="${esc(uid)}" data-type="${i.id}"`, titre: i.label,
+      detail: `+${i.gain} affinité · −${i.energie} énergie`, cout: i.prix ? fcfa(i.prix) : "Gratuit",
+      actif: j.energie >= i.energie && j.argent >= i.prix,
+    })).join("");
+    if (r.statut === "ami") {
+      const raison = pris ? `${prenom} est déjà en couple` : monPartenaire ? "Tu es déjà en couple" : `Affinité ${AFFINITE_COUPLE} nécessaire`;
+      actions += tuile({ attrs: `data-action="couple" data-valeur="${esc(uid)}"`, titre: "Proposer de sortir ensemble", detail: raison, cout: "", actif: r.affinite >= AFFINITE_COUPLE && !pris && !monPartenaire });
+    }
+    if (r.statut === "couple") {
+      actions += tuile({ attrs: `data-action="dot" data-valeur="${esc(uid)}"`, titre: "Apporter la dot", detail: `Affinité ${AFFINITE_DOT} nécessaire. Rendue si elle est refusée.`, cout: fcfa(PRIX_DOT), actif: r.affinite >= AFFINITE_DOT && j.argent >= PRIX_DOT });
+    }
+  }
+
+  let rupture = "";
+  if (r && ["ami", "couple", "demande_ami"].includes(r.statut) && !attendReponse(r, S.uid)) {
+    const libelle = r.statut === "couple" ? "Rompre" : r.statut === "ami" ? "Retirer de mes ami·e·s" : "Annuler ma demande";
+    rupture = S.confirmerRupture
+      ? `<div class="question" style="margin-top:12px"><p>Sûr·e ? Votre relation va reculer.</p><div class="deux">
+          <button class="btn secondaire" data-action="annuler-rupture">Annuler</button>
+          <button class="btn danger" data-action="rompre" data-valeur="${esc(uid)}" ${S.occupe ? "disabled" : ""}>Confirmer</button></div></div>`
+      : `<button class="btn danger" style="margin-top:12px" data-action="demander-rupture">${libelle}</button>`;
+  }
+
+  return `<div class="voile" data-action="fermer-feuille">
+    <div class="feuille" role="dialog" aria-modal="true" aria-labelledby="profil-nom" data-stop>
+      <div class="tete">
+        ${avatar(p.look, 84, p.actif)}
+        <div style="min-width:0">
+          <h3 id="profil-nom">${esc(p.nom)}</h3>
+          <div class="meta">${p.ageAns} ans · ${quartierDe(p.quartier).nom}</div>
+          <div class="meta">${esc(p.metier)}</div>
+          <div class="etiquettes">
+            <span class="etiquette orange">Score ${p.score}</span>
+            <span class="etiquette ${p.actif ? "vert" : ""}">${p.actif ? "En ligne" : "Hors ligne"}</span>
+            ${r && !r.statut.startsWith("demande_") ? `<span class="etiquette vert">${STATUTS[r.statut]}</span>` : ""}
+          </div>
+        </div>
+        <button class="icone-btn" data-action="fermer-feuille" aria-label="Fermer">✕</button>
+      </div>
+      ${r && !r.statut.startsWith("demande_") ? `<div style="margin-top:16px">${barre("Affinité entre vous", r.affinite, "orange")}</div>` : ""}
+      <button class="btn" style="margin-top:16px" data-action="chat" data-valeur="${esc(uid)}">Écrire à ${prenom}</button>
+      <h3 class="section-titre" style="font-size:15px">Actions</h3>
+      <div class="liste">${actions}</div>
+      ${rupture}
+    </div>
+  </div>`;
+}
+
+function vueBilan() {
+  const unite = { argent: (v) => fcfa(v), rep: (v) => `${v > 0 ? "+" : ""}${v} rép.`, bonheur: (v) => `${v > 0 ? "+" : ""}${v} bonheur` };
+  return `<div class="voile" data-action="fermer-bilan">
+    <div class="feuille bilan" role="dialog" aria-modal="true" aria-labelledby="bilan-titre" data-stop>
+      <h3 id="bilan-titre">Bilan du mois</h3>
+      <ul>${S.bilan.map((l) => `<li><span>${esc(l.texte)}</span>${l.valeur == null ? "" : `<b class="${l.valeur < 0 ? "moins" : "plus"}">${unite[l.unite](l.valeur)}</b>`}</li>`).join("")}</ul>
+      <button class="btn" data-action="fermer-bilan">Continuer</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- Chat (rendu à part pour ne jamais perdre la saisie) ---------- */
+function rendreChat() {
+  const racine = $("#chat-racine");
+  if (!S.chat) { racine.innerHTML = ""; return; }
+  const p = profilDe(S.chat);
+  racine.innerHTML = `<div class="chat" role="dialog" aria-modal="true" aria-label="Discussion">
+    <div class="barre-haut">
+      <button class="icone-btn" data-action="fermer-chat" aria-label="Retour">←</button>
+      ${p ? avatar(p.look, 36, p.actif) : ""}
+      <strong id="chat-nom">${esc(p?.nom || "…")}</strong>
+    </div>
+    <div class="fil" id="fil"></div>
+    <form id="form-chat" autocomplete="off">
+      <input class="champ" id="saisie" maxlength="500" placeholder="Ton message" enterkeyhint="send">
+      <button class="btn" type="submit">Envoyer</button>
+    </form>
+  </div>`;
+  rendreFil();
+}
+function rendreFil() {
+  const fil = $("#fil");
+  if (!fil) return;
+  const nom = $("#chat-nom");
+  const p = profilDe(S.chat);
+  if (nom && p) nom.textContent = p.nom;
+  if (S.messages == null) { fil.innerHTML = `<p class="chargement">Chargement…</p>`; return; }
+  if (!S.messages.length) {
+    fil.innerHTML = `<div class="vide">Dis bonjour à ${esc(p?.nom.split(" ")[0] || "ce joueur")}. On dit quoi ?</div>`;
+    return;
+  }
+  fil.innerHTML = [...S.messages].reverse().map((m) => `<div class="msg ${m.auteur === S.uid ? "moi" : ""}"><div>${esc(m.texte)}<small>${heure(m.envoyeLe)}</small></div></div>`).join("");
+  fil.scrollTop = fil.scrollHeight;
+}
+
+/* ---------- Rendu principal ---------- */
+let renduPrevu = false;
+function planifierRendu() {
+  if (renduPrevu) return;
+  renduPrevu = true;
+  requestAnimationFrame(() => { renduPrevu = false; rendre(); });
+}
+
+function rendre() {
+  const actif = document.activeElement;
+  const focus = actif && actif.id && "selectionStart" in actif
+    ? { id: actif.id, debut: actif.selectionStart, fin: actif.selectionEnd } : null;
+
+  const app = $("#app");
+  app.classList.toggle("avec-nav", S.ecran === "jeu");
+  app.innerHTML = {
+    chargement: () => `<div class="ecran-centre">Chargement…</div>`,
+    erreur: () => `<div class="ecran-centre"><div><p>${esc(S.erreurChargement)}</p><button class="btn" data-action="recharger">Réessayer</button></div></div>`,
+    auth: vueAuth,
+    creation: vueCreation,
+    naissance: vueNaissance,
+    jeu: vueJeu,
+  }[S.ecran]();
+
+  $("#feuille-racine").innerHTML = S.ecran !== "jeu" ? "" : S.bilan ? vueBilan() : S.profilOuvert ? vueProfil() : "";
+  if (S.chat) rendreFil();
+
+  if (focus) {
+    const el = document.getElementById(focus.id);
+    if (el && el !== document.activeElement && !el.closest("#chat-racine")) {
+      el.focus();
+      try { el.setSelectionRange(focus.debut, focus.fin); } catch (_) { /* champs sans sélection */ }
+    }
+  }
+}
+
+let minuterieToast;
+function toast(message) {
+  if (!message) return;
+  const t = $("#toast");
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(minuterieToast);
+  minuterieToast = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* =====================================================================
+   ÉVÉNEMENTS
+   ===================================================================== */
+let minuterieRecherche;
+document.addEventListener("input", (e) => {
+  const champ = e.target.dataset?.champ;
+  if (!champ) return;
+  const [a, b] = champ.split(".");
+  if (b) S[a][b] = e.target.value; else S[a] = e.target.value;
+  if (champ === "recherche") {
+    clearTimeout(minuterieRecherche);
+    const texte = e.target.value.trim();
+    if (texte.length < 2) { S.resultats = null; planifierRendu(); return; }
+    minuterieRecherche = setTimeout(async () => {
+      S.resultats = await S.serveur.rechercher(texte).catch(() => []);
+      rendre();
+    }, 350);
+  }
+});
+
+document.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (e.target.id === "form-auth") Actions.validerAuth();
+  if (e.target.id === "form-chat") Actions.envoyerMessage();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (S.chat) fermerChat();
+  else if (S.bilan) { S.bilan = null; rendre(); }
+  else if (S.profilOuvert) { S.profilOuvert = null; rendre(); }
+});
+
+document.addEventListener("click", (e) => {
+  const cible = e.target.closest("[data-action]");
+  if (!cible) return;
+  if (cible.classList.contains("voile") && e.target.closest("[data-stop]")) return;
+  const { action, valeur, type, cle } = cible.dataset;
+  const jouer = (fn) => Actions.jouer(fn);
+  switch (action) {
+    case "recharger": location.reload(); break;
+    case "mode-auth": S.auth.mode = valeur; S.auth.erreur = ""; rendre(); break;
+    case "deconnexion": S.serveur.deconnecter(); break;
+    case "genre": S.brouillon.genre = valeur; rendre(); break;
+    case "look": S.brouillon.look[cle] = cle === "coiffure" ? valeur : Number(valeur); rendre(); break;
+    case "naitre": Actions.naitre(); break;
+    case "commencer": S.ecran = "jeu"; S.onglet = "vie"; rendre(); window.scrollTo(0, 0); break;
+    case "onglet": S.onglet = valeur; rendre(); window.scrollTo(0, 0); break;
+    case "sous-onglet": S.sousOnglet = valeur; rendre(); break;
+    case "activite": jouer((j) => Moteur.activite(j, valeur)); break;
+    case "postuler": jouer((j) => Moteur.postuler(j, valeur)); break;
+    case "travailler": jouer((j) => Moteur.travailler(j)); break;
+    case "demissionner": jouer((j) => Moteur.demissionner(j)); break;
+    case "inscrire": jouer((j) => Moteur.inscrire(j)); break;
+    case "etudier": jouer((j) => Moteur.etudier(j)); break;
+    case "acheter": jouer((j) => Moteur.acheter(j, valeur)); break;
+    case "demenager": jouer((j) => Moteur.demenager(j, valeur)); break;
+    case "mois": Actions.moisSuivant(); break;
+    case "fermer-bilan": S.bilan = null; rendre(); break;
+    case "profil": S.profilOuvert = valeur; S.confirmerRupture = false; rendre(); break;
+    case "fermer-feuille": S.profilOuvert = null; rendre(); break;
+    case "chat": S.profilOuvert = null; rendre(); ouvrirChat(valeur); break;
+    case "fermer-chat": fermerChat(); rendre(); break;
+    case "ami": Actions.demanderAmi(valeur); break;
+    case "interagir": Actions.interagir(valeur, type); break;
+    case "couple": Actions.proposerCouple(valeur); break;
+    case "dot": Actions.proposerDot(valeur); break;
+    case "accepter": Actions.accepter(valeur); break;
+    case "refuser": Actions.refuser(valeur); break;
+    case "demander-rupture": S.confirmerRupture = true; rendre(); break;
+    case "annuler-rupture": S.confirmerRupture = false; rendre(); break;
+    case "rompre": Actions.rompre(valeur); break;
+  }
+});
+
+/* Survol ou toucher de la courbe d'argent */
+function suivreCourbe(e) {
+  const zone = $("#graphe");
+  if (!zone || !S.etat) return;
+  const svg = zone.querySelector("svg"), bulle = $("#bulle"), ligne = $("#curseur"), pt = $("#point-curseur");
+  const r = svg.getBoundingClientRect();
+  const dedans = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  if (!dedans) { bulle.hidden = true; ligne.setAttribute("visibility", "hidden"); pt.setAttribute("visibility", "hidden"); return; }
+  const histo = S.etat.stats.histo;
+  const { x, y } = echelleCourbe(histo);
+  const vx = ((e.clientX - r.left) / r.width) * G.L;
+  const i = Math.max(0, Math.min(histo.length - 1, Math.round(((vx - G.g) / (G.L - G.g - G.d)) * (histo.length - 1))));
+  const px = x(i), py = y(histo[i].argent);
+  ligne.setAttribute("x1", px); ligne.setAttribute("x2", px); ligne.setAttribute("visibility", "visible");
+  pt.setAttribute("cx", px); pt.setAttribute("cy", py); pt.setAttribute("visibility", "visible");
+  bulle.textContent = `Mois ${histo[i].mois} · ${fcfa(histo[i].argent)}`;
+  bulle.style.left = 12 + (px / G.L) * r.width + "px";
+  bulle.style.top = 12 + (py / G.H) * r.height + "px";
+  bulle.hidden = false;
+}
+document.addEventListener("pointermove", suivreCourbe);
+document.addEventListener("pointerdown", suivreCourbe);
+
+/* Installation sur le téléphone (application web installable) */
+function enregistrerServiceWorker() {
+  if (!("serviceWorker" in navigator) || location.protocol !== "https:") return;
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+demarrer();
+
+</script>
+</body>
+</html>

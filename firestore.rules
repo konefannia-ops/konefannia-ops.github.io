@@ -1,0 +1,109 @@
+rules_version = '2';
+
+// Règles de sécurité de « La Vie à Babi ».
+// À copier dans Firebase : Firestore Database > Règles > Publier.
+// Principe : chacun ne modifie que ses propres données, et une relation
+// ne peut avancer que par les étapes prévues par le jeu.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function connecte() { return request.auth != null; }
+    function moi() { return request.auth.uid; }
+    function dansPaire(id) { return connecte() && moi() in id.split('_'); }
+    function paireValide(id, membres) {
+      return membres is list && membres.size() == 2 && membres[0] < membres[1]
+        && id == membres[0] + '_' + membres[1];
+    }
+
+    // ---------- Profils publics ----------
+    match /players/{uid} {
+      allow read: if connecte();
+      allow create: if connecte() && moi() == uid
+        && request.resource.data.nom is string
+        && request.resource.data.nom.size() >= 2 && request.resource.data.nom.size() <= 20;
+      allow update: if connecte() && moi() == uid
+        && request.resource.data.nom == resource.data.nom
+        && request.resource.data.nomMinuscule == resource.data.nomMinuscule;
+      allow delete: if false;
+    }
+
+    // ---------- Partie privée ----------
+    match /etats/{uid} {
+      allow read, write: if connecte() && moi() == uid;
+    }
+
+    // ---------- Noms réservés (pour qu'ils soient uniques) ----------
+    match /noms/{nom} {
+      allow read: if connecte();
+      allow create: if connecte() && request.resource.data.uid == moi()
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow update, delete: if false;
+    }
+
+    // ---------- Relations entre joueurs ----------
+    match /relations/{id} {
+      function avant() { return resource.data; }
+      function apres() { return request.resource.data; }
+      function changes() { return apres().diff(avant()).affectedKeys(); }
+
+      function affinite() {
+        return changes().hasOnly(['affinite', 'majLe']) && avant().statut != 'demande_ami'
+          && apres().affinite is int && apres().affinite <= 100
+          && apres().affinite > avant().affinite && apres().affinite <= avant().affinite + 20;
+      }
+      function accepter() {
+        return avant().demandeur != moi() && changes().hasOnly(['statut', 'majLe']) && (
+          (avant().statut == 'demande_ami' && apres().statut == 'ami') ||
+          (avant().statut == 'demande_couple' && apres().statut == 'couple') ||
+          (avant().statut == 'demande_dot' && apres().statut == 'marie'));
+      }
+      function proposer() {
+        return apres().demandeur == moi() && changes().hasOnly(['statut', 'demandeur', 'majLe']) && (
+          (avant().statut == 'ami' && apres().statut == 'demande_couple' && avant().affinite >= 50) ||
+          (avant().statut == 'couple' && apres().statut == 'demande_dot' && avant().affinite >= 80));
+      }
+      function refuser() {
+        return avant().demandeur != moi() && (
+          (avant().statut == 'demande_couple' && apres().statut == 'ami' && changes().hasOnly(['statut', 'majLe'])) ||
+          (avant().statut == 'demande_dot' && apres().statut == 'couple'
+            && apres().rembourserDot == avant().demandeur
+            && changes().hasOnly(['statut', 'rembourserDot', 'majLe'])));
+      }
+      function rompre() {
+        return avant().statut == 'couple' && apres().statut == 'ami'
+          && changes().hasOnly(['statut', 'affinite', 'majLe']) && apres().affinite <= avant().affinite;
+      }
+      function encaisser() {
+        return avant().rembourserDot == moi() && changes().hasOnly(['rembourserDot']);
+      }
+
+      allow get: if dansPaire(id);
+      allow list: if connecte() && moi() in resource.data.membres;
+      allow create: if connecte() && paireValide(id, apres().membres) && moi() in apres().membres
+        && apres().statut == 'demande_ami' && apres().demandeur == moi() && apres().affinite == 10;
+      allow update: if connecte() && moi() in avant().membres && apres().membres == avant().membres
+        && (affinite() || accepter() || proposer() || refuser() || rompre() || encaisser());
+      allow delete: if connecte() && moi() in avant().membres && avant().statut in ['demande_ami', 'ami'];
+    }
+
+    // ---------- Messagerie ----------
+    match /conversations/{id} {
+      allow get: if dansPaire(id);
+      allow list: if connecte() && moi() in resource.data.membres;
+      allow create, update: if connecte() && paireValide(id, request.resource.data.membres)
+        && moi() in request.resource.data.membres
+        && request.resource.data.dernierMessage is string
+        && request.resource.data.dernierMessage.size() <= 90;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if dansPaire(id);
+        allow create: if dansPaire(id) && request.resource.data.auteur == moi()
+          && request.resource.data.texte is string
+          && request.resource.data.texte.size() > 0 && request.resource.data.texte.size() <= 500
+          && request.resource.data.envoyeLe == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
